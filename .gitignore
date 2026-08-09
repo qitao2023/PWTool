@@ -1,0 +1,30 @@
+# Visual Studio 生成目录
+Debug/
+Release/
+x64/
+.vs/
+*.tlog/
+
+# 编译产物
+*.obj
+*.o
+*.pch
+*.pdb
+*.ilk
+*.res
+*.aps
+*.log
+*.exe
+*.dll
+*.lib
+*.user
+
+# 数据库 / 临时文件
+*.db
+*.tmp
+*.bak
+
+# 参考资料(仅本地)
+参考资料/
+use
+autocad_data.db

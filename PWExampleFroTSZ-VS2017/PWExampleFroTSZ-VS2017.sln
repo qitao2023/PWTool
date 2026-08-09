@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.34930.48
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "PWExampleFroTSZ-VS2017", "PWExampleFroTSZ-VS2017\PWExampleFroTSZ-VS2017.vcxproj", "{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Debug|x64.ActiveCfg = Debug|x64
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Debug|x64.Build.0 = Debug|x64
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Debug|x86.ActiveCfg = Debug|Win32
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Debug|x86.Build.0 = Debug|Win32
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Release|x64.ActiveCfg = Release|x64
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Release|x64.Build.0 = Release|x64
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Release|x86.ActiveCfg = Release|Win32
+		{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0E7B4BA7-787F-466A-8B72-0846D238ED55}
+	EndGlobalSection
+EndGlobal
