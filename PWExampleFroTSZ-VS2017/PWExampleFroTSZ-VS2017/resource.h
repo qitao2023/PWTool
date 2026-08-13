@@ -12,6 +12,7 @@
 #define IDD_DOCLIST_DLG                 130
 #define IDD_LINKMGR_DLG                 131
 #define IDD_UPLOAD_DLG                  132
+#define IDD_VERSIONLIST_DLG             133
 
 // 主对话框新增控件
 #define IDC_BTN_PW_LOGIN                1100
@@ -50,13 +51,17 @@
 #define IDC_EDIT_TARGETDIR              1407
 #define IDC_BTN_BROWSE_TARGET           1408
 
+// VersionListDlg 控件
+#define IDC_LIST_VERSIONS               1500
+#define IDC_STATIC_VINFO                1501
+
 // Next default values for new objects
 //
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        140
+#define _APS_NEXT_RESOURCE_VALUE        141
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1500
+#define _APS_NEXT_CONTROL_VALUE         1502
 #define _APS_NEXT_SYMED_VALUE           101
 #endif
 #endif

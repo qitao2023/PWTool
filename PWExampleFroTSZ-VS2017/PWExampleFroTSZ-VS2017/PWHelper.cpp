@@ -229,6 +229,11 @@ BOOL SavePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, const PWAddrInfo& info)
     WritePrivateProfileStringW(strSec, _T("comment"), info.strComment, strIni);
     strTmp.Format(_T("%d"), info.bLink ? 1 : 0);
     WritePrivateProfileStringW(strSec, _T("linkState"), strTmp, strIni);
+    // 记录用户实际选择的本地完整路径
+    CString strLocal = info.strLocalPath;
+    if (strLocal.IsEmpty())
+        strLocal = CString(pszFolder) + _T("\\") + GetFileName(pszLocalFile);
+    WritePrivateProfileStringW(strSec, _T("localPath"), strLocal, strIni);
     return TRUE;
 }
 
@@ -257,6 +262,8 @@ BOOL LoadPwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, PWAddrInfo& info)
     info.strComment = szBuf;
     GetPrivateProfileStringW(strSec, _T("linkState"), _T("0"), szBuf, 512, strIni);
     info.bLink = (_tstol(szBuf) != 0);
+    GetPrivateProfileStringW(strSec, _T("localPath"), _T(""), szBuf, 512, strIni);
+    info.strLocalPath = szBuf;
     return TRUE;
 }
 
@@ -304,13 +311,94 @@ BOOL EnumPwAddrSections(LPCTSTR pszFolder, CStringArray& arrFiles)
     return (arrFiles.GetSize() > 0);
 }
 
+CString GetLinkFolderIniPath()
+{
+    return GetAppBaseDir() + _T("\\LinkFolders.ini");
+}
+
+BOOL RegisterLinkFolder(LPCTSTR pszFolder)
+{
+    if (pszFolder == NULL || pszFolder[0] == _T('\0'))
+        return FALSE;
+
+    CString strIni = GetLinkFolderIniPath();
+    CString strFolder(pszFolder);
+    strFolder.TrimRight(_T('\\'));
+    if (strFolder.IsEmpty())
+        return FALSE;
+
+    // 已登记则不重复添加
+    int nCount = (int)GetPrivateProfileIntW(_T("folders"), _T("count"), 0, strIni);
+    for (int i = 0; i < nCount; i++)
+    {
+        CString strKey; strKey.Format(_T("dir%d"), i);
+        TCHAR szBuf[MAX_PATH] = { 0 };
+        GetPrivateProfileStringW(_T("folders"), strKey, _T(""), szBuf, MAX_PATH, strIni);
+        if (szBuf[0] != _T('\0') && _wcsicmp(szBuf, strFolder) == 0)
+            return TRUE;
+    }
+
+    CString strKey; strKey.Format(_T("dir%d"), nCount);
+    CString strCnt; strCnt.Format(_T("%d"), nCount + 1);
+    WritePrivateProfileStringW(_T("folders"), strKey, strFolder, strIni);
+    WritePrivateProfileStringW(_T("folders"), _T("count"), strCnt, strIni);
+    return TRUE;
+}
+
+void EnumLinkFolders(CStringArray& arrFolders)
+{
+    arrFolders.RemoveAll();
+    // 始终包含默认 LinkModel 目录
+    arrFolders.Add(GetLinkModelDir());
+
+    CString strIni = GetLinkFolderIniPath();
+    int nCount = (int)GetPrivateProfileIntW(_T("folders"), _T("count"), 0, strIni);
+    for (int i = 0; i < nCount; i++)
+    {
+        CString strKey; strKey.Format(_T("dir%d"), i);
+        TCHAR szBuf[MAX_PATH] = { 0 };
+        GetPrivateProfileStringW(_T("folders"), strKey, _T(""), szBuf, MAX_PATH, strIni);
+        if (szBuf[0] == _T('\0'))
+            continue;
+
+        CString strDir(szBuf);
+        BOOL bDup = FALSE;
+        for (INT_PTR j = 0; j < arrFolders.GetSize(); j++)
+        {
+            if (arrFolders[j].CompareNoCase(strDir) == 0)
+            {
+                bDup = TRUE;
+                break;
+            }
+        }
+        if (!bDup)
+            arrFolders.Add(strDir);
+    }
+}
+
 //--------------------------------------------------------------------------------------+
 // PW 操作
 //--------------------------------------------------------------------------------------+
 
+LONG GetLatestDocumentId(LONG lProjectId, LONG lDocumentId)
+{
+    if (lProjectId <= 0 || lDocumentId <= 0)
+        return lDocumentId;
+
+    LONG nRes = aaApi_SelectDocument(lProjectId, lDocumentId);
+    if (nRes != 1)
+        return lDocumentId;
+
+    // 当前版本 ORIGINALNO=0；历史版本的 ORIGINALNO 指向当前(活动)版本的 docid
+    LONG lOriginalNo = aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, 0);
+    return (lOriginalNo > 0) ? lOriginalNo : lDocumentId;
+}
+
 BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir, CString& strOutFile)
 {
     strOutFile.Empty();
+    if (lDocumentId <= 0)
+        return FALSE;
     if (pszWorkDir == NULL || !CreateDirRecursive(pszWorkDir))
         return FALSE;
 
@@ -321,18 +409,125 @@ BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir, CSt
     return bOk;
 }
 
-CString GetLatestVersionDate(LONG lProjectId, LONG lDocumentId)
+LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
+                          CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions)
 {
+    arrVersions.RemoveAll();
+    if (lProjectId <= 0 || lDocumentId <= 0)
+        return 0;
+
+    // 先从任意版本定位到当前(最新)版本再枚举版本链：
+    // SelectDocumentVersions 对非活动(历史)版本可能枚举不到。
+    lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
+    if (lDocumentId <= 0)
+        return 0;
+
+    LONG nCount = aaApi_SelectDocumentVersions(lProjectId, lDocumentId);
+    if (nCount <= 0)
+        return nCount;
+
+    for (LONG i = 0; i < nCount; i++)
+    {
+        PWDocVersionItem item;
+        item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
+        item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
+        item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
+        const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
+        if (psz) item.strVersion = psz;
+        psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
+        if (psz) item.strUpdateTime = psz;
+        arrVersions.Add(item);
+    }
+
+    // 按版本号从大到小排序（最新在前）
+    for (INT_PTR i = 0; i + 1 < arrVersions.GetSize(); i++)
+        for (INT_PTR j = i + 1; j < arrVersions.GetSize(); j++)
+            if (arrVersions[i].lVersionNo < arrVersions[j].lVersionNo)
+            {
+                PWDocVersionItem t = arrVersions[i];
+                arrVersions[i] = arrVersions[j];
+                arrVersions[j] = t;
+            }
+
+    return arrVersions.GetSize();
+}
+
+BOOL DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile,
+                        CString& strErr, CString* pstrOutFile)
+{
+    strErr.Empty();
+    if (pstrOutFile != NULL)
+        pstrOutFile->Empty();
+    if (pszTargetFile == NULL || pszTargetFile[0] == _T('\0'))
+    {
+        strErr = _T("目标文件路径为空。");
+        return FALSE;
+    }
+
+    CString strFolder = GetFileFolder(pszTargetFile);
+    if (strFolder.IsEmpty() || !CreateDirRecursive(strFolder))
+    {
+        strErr = _T("本地目录无效。");
+        return FALSE;
+    }
+
+    // 下载落到目标文件（链接模型）所在目录，CopyOut 实际写出的路径回传出来便于诊断。
+    // 目标目录已有同名文件时 CopyOut 可能生成带序号的新文件（如 xxx_1.dgn），
+    // 因此下载后把实际输出文件覆盖/移动到链接文件上，确保本地文件被真正更新。
+    CString strOut;
+    if (!DownloadDocument(lProjectId, lDocumentId, strFolder, strOut))
+    {
+        strErr = GetLastErrorText();
+        return FALSE;
+    }
+    if (pstrOutFile != NULL)
+        *pstrOutFile = strOut;
+
+    if (strOut.CompareNoCase(pszTargetFile) != 0)
+    {
+        // 优先用 MoveFileEx 直接替换；失败（目标被占用）时退回复制，仍失败则明确报错
+        if (!MoveFileEx(strOut, pszTargetFile, MOVEFILE_REPLACE_EXISTING))
+        {
+            if (!CopyFile(strOut, pszTargetFile, FALSE))
+            {
+                CString strWinErr;
+                strWinErr.Format(_T("错误码 %lu"), (unsigned long)GetLastError());
+                strErr = _T("无法用最新版本覆盖本地文件（") + strWinErr +
+                         _T("），文件可能正被 CAD 等程序打开，请先关闭该文件后重试。");
+                DeleteFile(strOut);
+                return FALSE;
+            }
+            DeleteFile(strOut);
+        }
+    }
+    return TRUE;
+}
+
+CString GetVersionDate(LONG lProjectId, LONG lDocumentId)
+{
+    if (lDocumentId <= 0)
+        return _T("");
     LONG nRes = aaApi_SelectDocument(lProjectId, lDocumentId);
     if (nRes != 1)
         return _T("");
-    // [修复] 用 FILE_UPDATE_TIME(文件内容最后更新时间) 作为"最新版本"时间
+    // [修复] 用 FILE_UPDATE_TIME(文件内容最后更新时间) 作为版本时间
     const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, 0);
     return (psz != NULL) ? CString(psz) : CString(_T(""));
 }
 
+CString GetLatestVersionDate(LONG lProjectId, LONG lDocumentId)
+{
+    lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
+    if (lDocumentId <= 0)
+        return _T("");
+    return GetVersionDate(lProjectId, lDocumentId);
+}
+
 CString GetLatestVersion(LONG lProjectId, LONG lDocumentId)
 {
+    lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
+    if (lDocumentId <= 0)
+        return _T("");
     LONG nRes = aaApi_SelectDocument(lProjectId, lDocumentId);
     if (nRes != 1)
         return _T("");
@@ -351,6 +546,14 @@ BOOL UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
                       LPCTSTR pszWorkDir, const CString& strComment, CString& strErr)
 {
     strErr.Empty();
+
+    // 始终基于当前(最新)版本检入新版本：INI 中的 docid 可能指向历史版本
+    lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
+    if (lDocumentId <= 0)
+    {
+        strErr = _T("无效的文档ID。");
+        return FALSE;
+    }
 
     // 检查写权限。[修复记录] aaApi_GetDocumentAccess 返回的是访问级别而非位掩码：
     //   AADMS_ACCESS_WRITE=可修改/可checkin，AADMS_ACCESS_READ=只读。

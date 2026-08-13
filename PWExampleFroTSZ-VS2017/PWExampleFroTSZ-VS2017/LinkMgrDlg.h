@@ -39,9 +39,10 @@ private:
 		LinkItem() : bHasAddr(FALSE), bLink(FALSE) {}
 	};
 
-	void ReloadList();                      // 扫描 LinkModel + INI 合并构建列表
+	void ReloadList();                      // 扫描各链接目录 + INI 合并构建列表
 	void DetectLatestVersions();            // 逐项查询 PW 最新版本日期
 	int  GetSelectedRow() const;
+	int  FindItem(LPCTSTR pszFileName) const;   // 按文件名找已存在的行号，找不到返回 -1
 	void SetStatusText(LPCTSTR psz);
 
 	CListCtrl m_list;

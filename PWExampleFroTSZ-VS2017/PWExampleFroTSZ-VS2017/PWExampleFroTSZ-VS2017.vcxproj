@@ -213,6 +213,7 @@
     <ClInclude Include="DocListDlg.h" />
     <ClInclude Include="LinkMgrDlg.h" />
     <ClInclude Include="UploadDlg.h" />
+    <ClInclude Include="VersionListDlg.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp">
@@ -227,6 +228,7 @@
     <ClCompile Include="DocListDlg.cpp" />
     <ClCompile Include="LinkMgrDlg.cpp" />
     <ClCompile Include="UploadDlg.cpp" />
+    <ClCompile Include="VersionListDlg.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="PWExampleFroTSZVS2017.rc" />

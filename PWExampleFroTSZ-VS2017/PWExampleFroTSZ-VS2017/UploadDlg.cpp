@@ -113,7 +113,12 @@ BOOL CDlgUpload::DoUpload()
 		}
 
 		// 更新本地 INI 中的版本日期与版本说明
-		CString strNewDate = PWHelper::GetLatestVersionDate(m_addr.lProjectId, m_addr.lDocumentId);
+		// [修复] 检入生成了新版本（新 docid），INI 应记录最新版本的 docid；
+		// 原来一直停留在检入前的旧 docid 上（虽然读取都会先 GetLatestDocumentId 解析）。
+		LONG lNewDocId = PWHelper::GetLatestDocumentId(m_addr.lProjectId, m_addr.lDocumentId);
+		if (lNewDocId > 0)
+			m_addr.lDocumentId = lNewDocId;
+		CString strNewDate = PWHelper::GetVersionDate(m_addr.lProjectId, m_addr.lDocumentId);
 		// 回读服务器当前版本串，用于确认是否真的生成了新版本（A->B）
 		CString strNewVer = PWHelper::GetLatestVersion(m_addr.lProjectId, m_addr.lDocumentId);
 		m_addr.strVersionDate = strNewDate;

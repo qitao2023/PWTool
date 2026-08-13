@@ -17,6 +17,7 @@ namespace PWHelper
         CString strVersionDate;   // 下载时 PW 版本更新时间
         CString strComment;       // 最近一次上传版本说明
         BOOL    bLink;            // 链接状态 1=已链接 0=未链接
+        CString strLocalPath;     // 链接/下载时用户实际选择的本地完整路径
 
         PWAddrInfo()
             : lProjectId(0), lDocumentId(0), bLink(FALSE)
@@ -41,6 +42,21 @@ namespace PWHelper
         }
     };
 
+    // 文档版本信息（VersionListDlg 使用）
+    struct PWDocVersionItem
+    {
+        LONG    lDocumentId;      // 该版本的 docid
+        LONG    lVersionNo;       // 版本序号（越大越新）
+        CString strVersion;       // 版本串
+        CString strUpdateTime;    // 文件更新时间 FILE_UPDATE_TIME
+        LONG    lSize;            // 文件大小（字节）DOC_PROP_SIZE
+
+        PWDocVersionItem()
+            : lDocumentId(0), lVersionNo(0), lSize(0)
+        {
+        }
+    };
+
     // ---- 登录 / 数据源 ----
     BOOL    IsLoggedIn();                                 // aaApi_GetCurrentUserId()!=0
     BOOL    EnsureLogin(CWnd* pParent);                   // 未登录则弹登录框，返回是否成功
@@ -58,16 +74,35 @@ namespace PWHelper
 
     // ---- INI（PW 地址来源）----
     CString GetAddrIniPath(LPCTSTR pszFolder);            // 返回 folder\PWAddress.ini
-    BOOL    SavePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, const PWAddrInfo& info);
+    BOOL    SavePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, const PWAddrInfo& info); // 记录 localPath=文件夹+文件名
     BOOL    LoadPwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, PWAddrInfo& info);
     BOOL    SetPwAddrLinkState(LPCTSTR pszFolder, LPCTSTR pszLocalFile, BOOL bLink);
     BOOL    DeletePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile);
     BOOL    EnumPwAddrSections(LPCTSTR pszFolder, CStringArray& arrFiles); // 返回 INI 中的节名(文件名)
 
+    // ---- 链接目录注册表（exe 目录\LinkFolders.ini）----
+    // 链接时用户可选择任意本地目录，注册后链接管理才会扫描该目录。
+    BOOL    RegisterLinkFolder(LPCTSTR pszFolder);       // 登记一个链接目录（去重）
+    void    EnumLinkFolders(CStringArray& arrFolders);   // 返回所有链接目录（始终含默认 LinkModel）
+
     // ---- PW 操作 ----
+    // 由文档的任一版本 docid 解析出该文档当前(最新)版本的 docid。
+    // [修复] ProjectWise 每个版本是独立的 docid，服务器上检入新版本后旧 docid 仍指向旧版本；
+    // 通过 DOC_PROP_ORIGINALNO 关联：当前版本该值=0，历史版本该值=当前版本的 docid。
+    LONG    GetLatestDocumentId(LONG lProjectId, LONG lDocumentId);
+    // 枚举文档的所有版本（按版本号从新到旧排序），返回版本数量；失败返回<=0。
+    LONG    EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
+                                 CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
+    // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
     BOOL    DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir, CString& strOutFile); // CopyOutDocument
-    CString GetLatestVersionDate(LONG lProjectId, LONG lDocumentId);      // SelectDocument + FILE_UPDATE_TIME
-    CString GetLatestVersion(LONG lProjectId, LONG lDocumentId);          // SelectDocument + DOC_PROP_VERSION（服务器当前版本串）
+    // 下载指定版本并覆盖本地链接文件。下载直接落到目标文件所在目录；若 CopyOut 因同名文件
+    // 生成了带序号的新文件，则把它覆盖/移动到链接文件上。成功返回 TRUE，失败时 strErr 给出原因；
+    // pstrOutFile 非空时回传 CopyOut 实际写入的文件路径（便于诊断）。
+    BOOL    DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile,
+                               CString& strErr, CString* pstrOutFile = NULL);
+    CString GetVersionDate(LONG lProjectId, LONG lDocumentId);            // 读取指定 docid 对应版本的时间 FILE_UPDATE_TIME（不解析最新）
+    CString GetLatestVersionDate(LONG lProjectId, LONG lDocumentId);      // 解析最新版本 + FILE_UPDATE_TIME
+    CString GetLatestVersion(LONG lProjectId, LONG lDocumentId);          // 解析最新版本 + DOC_PROP_VERSION
     LONG    GetDocumentAccess(LONG lProjectId, LONG lDocumentId, LONG lIndex = -1); // aaApi_GetDocumentAccess（lIndex>=0时用当前buffer，不重新select）
     BOOL    UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
                              LPCTSTR pszWorkDir, const CString& strComment, CString& strErr); // CheckOut->覆盖->CheckInLeaveCopy

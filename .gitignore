@@ -28,3 +28,6 @@ x64/
 参考资料/
 use
 autocad_data.db
+
+# 打包产物
+dist/

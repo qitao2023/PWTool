@@ -4,6 +4,7 @@
 #include "framework.h"
 #include "PWExampleFroTSZ-VS2017.h"
 #include "LinkMgrDlg.h"
+#include "VersionListDlg.h"
 #include "PWHelper.h"
 
 #include <afxtempl.h>
@@ -19,6 +20,23 @@ static CString GetLocalVersion(LPCTSTR pszPath)
 	if (CFile::GetStatus(pszPath, fs))
 		return fs.m_mtime.Format(_T("%Y-%m-%d %H:%M:%S"));
 	return _T("--");
+}
+
+// 更新流程诊断日志：追加写入 LinkModel\pw_update.log，便于排查"更新不到最新"问题
+static void LogUpdate(LPCTSTR pszLine)
+{
+	CString strDir = PWHelper::GetLinkModelDir();
+	PWHelper::CreateDirRecursive(strDir);
+	CString strPath = strDir + _T("\\pw_update.log");
+
+	FILE* f = NULL;
+	if (_wfopen_s(&f, strPath, L"a, ccs=UTF-8") == 0 && f != NULL)
+	{
+		CTime t = CTime::GetCurrentTime();
+		CString strHead = t.Format(_T("%Y-%m-%d %H:%M:%S"));
+		fwprintf(f, L"[%s] %s\n", (LPCTSTR)strHead, pszLine);
+		fclose(f);
+	}
 }
 
 BEGIN_MESSAGE_MAP(CDlgLinkMgr, CDialogEx)
@@ -70,62 +88,61 @@ void CDlgLinkMgr::ReloadList()
 	m_list.DeleteAllItems();
 	m_arrItems.RemoveAll();
 
-	CString strDir = PWHelper::GetLinkModelDir();
-	PWHelper::CreateDirRecursive(strDir);
+	// 扫描所有已登记的链接目录（链接时用户可自定义下载目录，默认也含 LinkModel）
+	CStringArray arrFolders;
+	PWHelper::EnumLinkFolders(arrFolders);
 
-	// 1. INI 中记录的节名（文件名）
-	CStringArray arrIniFiles;
-	BOOL bHasIni = PWHelper::EnumPwAddrSections(strDir, arrIniFiles);
-
-	// 2. 扫描 LinkModel 目录磁盘文件（排除 PWAddress.ini）
-	CStringArray arrDiskFiles;
-	WIN32_FIND_DATA fd;
-	HANDLE hFind = FindFirstFile(strDir + _T("\\*"), &fd);
-	if (hFind != INVALID_HANDLE_VALUE)
+	for (INT_PTR k = 0; k < arrFolders.GetSize(); k++)
 	{
-		do
+		CString strDir = arrFolders[k];
+		PWHelper::CreateDirRecursive(strDir);
+
+		// 1. INI 中记录的节名（文件名）
+		CStringArray arrIniFiles;
+		PWHelper::EnumPwAddrSections(strDir, arrIniFiles);
+
+		// 2. 扫描目录磁盘文件（排除 PWAddress.ini）
+		CStringArray arrDiskFiles;
+		WIN32_FIND_DATA fd;
+		HANDLE hFind = FindFirstFile(strDir + _T("\\*"), &fd);
+		if (hFind != INVALID_HANDLE_VALUE)
 		{
-			if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+			do
 			{
-				CString strName(fd.cFileName);
-				if (strName.CompareNoCase(_T("PWAddress.ini")) != 0)
-					arrDiskFiles.Add(strName);
-			}
-		} while (FindNextFile(hFind, &fd));
-		FindClose(hFind);
-	}
-
-	// 3. 合并：磁盘文件 + INI 节
-	for (INT_PTR i = 0; i < arrDiskFiles.GetSize(); i++)
-	{
-		LinkItem item;
-		item.strFileName = arrDiskFiles[i];
-		item.strLocalPath = strDir + _T("\\") + item.strFileName;
-		item.bHasAddr = PWHelper::LoadPwAddr(strDir, item.strFileName, item.addr);
-		item.bLink = item.addr.bLink;
-		m_arrItems.Add(item);
-	}
-
-	for (INT_PTR i = 0; i < arrIniFiles.GetSize(); i++)
-	{
-		BOOL bFound = FALSE;
-		for (INT_PTR j = 0; j < m_arrItems.GetSize(); j++)
-		{
-			if (m_arrItems[j].strFileName.CompareNoCase(arrIniFiles[i]) == 0)
-			{
-				bFound = TRUE;
-				break;
-			}
+				if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+				{
+					CString strName(fd.cFileName);
+					if (strName.CompareNoCase(_T("PWAddress.ini")) != 0)
+						arrDiskFiles.Add(strName);
+				}
+			} while (FindNextFile(hFind, &fd));
+			FindClose(hFind);
 		}
-		if (bFound)
-			continue;
 
-		LinkItem item;
-		item.strFileName = arrIniFiles[i];
-		item.strLocalPath = strDir + _T("\\") + item.strFileName;
-		item.bHasAddr = PWHelper::LoadPwAddr(strDir, item.strFileName, item.addr);
-		item.bLink = item.addr.bLink;
-		m_arrItems.Add(item);
+		// 3. 合并：磁盘文件 + INI 节（同名文件在多个目录时取最先扫描到的）
+		for (INT_PTR i = 0; i < arrDiskFiles.GetSize(); i++)
+		{
+			if (FindItem(arrDiskFiles[i]) >= 0)
+				continue;
+			LinkItem item;
+			item.strFileName = arrDiskFiles[i];
+			item.strLocalPath = strDir + _T("\\") + item.strFileName;
+			item.bHasAddr = PWHelper::LoadPwAddr(strDir, item.strFileName, item.addr);
+			item.bLink = item.addr.bLink;
+			m_arrItems.Add(item);
+		}
+
+		for (INT_PTR i = 0; i < arrIniFiles.GetSize(); i++)
+		{
+			if (FindItem(arrIniFiles[i]) >= 0)
+				continue;
+			LinkItem item;
+			item.strFileName = arrIniFiles[i];
+			item.strLocalPath = strDir + _T("\\") + item.strFileName;
+			item.bHasAddr = PWHelper::LoadPwAddr(strDir, item.strFileName, item.addr);
+			item.bLink = item.addr.bLink;
+			m_arrItems.Add(item);
+		}
 	}
 
 	// 4. 填充列表
@@ -133,7 +150,11 @@ void CDlgLinkMgr::ReloadList()
 	{
 		LinkItem& it = m_arrItems[i];
 		int nRow = m_list.InsertItem(m_list.GetItemCount(), it.strFileName);
-		m_list.SetItemText(nRow, 1, GetLocalVersion(it.strLocalPath));
+		// 当前版本优先取 INI 记录的 PW 版本时间（本地文件修改时间不反映它对应服务器的哪个版本，
+		// 本地另存/复制后 mtime 会变但"同步自哪个版本"不变）；无 PW 地址或 INI 无记录时退回文件修改时间。
+		CString strCur = (it.bHasAddr && !it.addr.strVersionDate.IsEmpty())
+			? it.addr.strVersionDate : GetLocalVersion(it.strLocalPath);
+		m_list.SetItemText(nRow, 1, strCur);
 		m_list.SetItemText(nRow, 2, _T("未检测"));
 		m_list.SetItemText(nRow, 3, it.bLink ? _T("已链接") : _T("未链接"));
 		m_list.SetItemText(nRow, 4, it.bHasAddr ? _T("PW") : _T("本地"));
@@ -171,6 +192,16 @@ int CDlgLinkMgr::GetSelectedRow() const
 	if (pos == NULL)
 		return -1;
 	return m_list.GetNextSelectedItem(pos);
+}
+
+int CDlgLinkMgr::FindItem(LPCTSTR pszFileName) const
+{
+	for (INT_PTR i = 0; i < m_arrItems.GetSize(); i++)
+	{
+		if (m_arrItems[i].strFileName.CompareNoCase(pszFileName) == 0)
+			return (int)i;
+	}
+	return -1;
 }
 
 void CDlgLinkMgr::SetStatusText(LPCTSTR psz)
@@ -242,7 +273,7 @@ void CDlgLinkMgr::OnBnClickedDel()
 		}
 	}
 
-	PWHelper::DeletePwAddr(PWHelper::GetLinkModelDir(), it.strFileName);
+	PWHelper::DeletePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName);
 	ReloadList();
 	SetStatusText(_T("已删除。"));
 }
@@ -269,24 +300,30 @@ void CDlgLinkMgr::OnBnClickedLink()
 		if (!PWHelper::EnsureLogin(this))
 			return;
 
-		CString strOut;
-		if (!PWHelper::DownloadDocument(it.addr.lProjectId, it.addr.lDocumentId,
-			PWHelper::GetLinkModelDir(), strOut))
+		// 解析当前最新版本 docid：INI 中记录的 docid 可能指向历史版本
+		LONG lDocId = PWHelper::GetLatestDocumentId(it.addr.lProjectId, it.addr.lDocumentId);
+		if (lDocId <= 0)
+			lDocId = it.addr.lDocumentId;
+
+		CString strErr;
+		if (!PWHelper::DownloadAndReplace(it.addr.lProjectId, lDocId,
+			it.strLocalPath, strErr))
 		{
-			AfxMessageBox(_T("重新下载最新版本失败：") + PWHelper::GetLastErrorText());
+			AfxMessageBox(_T("重新下载最新版本失败：") + strErr);
 			return;
 		}
 
-		CString strNewDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, it.addr.lDocumentId);
+		CString strNewDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, lDocId);
 		it.addr.bLink = TRUE;
+		it.addr.lDocumentId = lDocId;
 		if (!strNewDate.IsEmpty())
 			it.addr.strVersionDate = strNewDate;
-		PWHelper::SavePwAddr(PWHelper::GetLinkModelDir(), it.strFileName, it.addr);
+		PWHelper::SavePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, it.addr);
 	}
 	else
 	{
 		// 无 PW 地址的本地模型，仅标记已链接
-		PWHelper::SetPwAddrLinkState(PWHelper::GetLinkModelDir(), it.strFileName, TRUE);
+		PWHelper::SetPwAddrLinkState(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, TRUE);
 	}
 
 	ReloadList();
@@ -309,7 +346,7 @@ void CDlgLinkMgr::OnBnClickedUnlink()
 		return;
 	}
 
-	PWHelper::SetPwAddrLinkState(PWHelper::GetLinkModelDir(), it.strFileName, FALSE);
+	PWHelper::SetPwAddrLinkState(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, FALSE);
 	ReloadList();
 	SetStatusText(_T("已卸载链接。"));
 }
@@ -333,19 +370,54 @@ void CDlgLinkMgr::OnBnClickedUpdate()
 	if (!PWHelper::EnsureLogin(this))
 		return;
 
-	CString strOut;
-	if (!PWHelper::DownloadDocument(it.addr.lProjectId, it.addr.lDocumentId,
-		PWHelper::GetLinkModelDir(), strOut))
+	// 解析当前最新版本 docid：INI 中记录的 docid 可能指向历史版本
+	LONG lDocId = PWHelper::GetLatestDocumentId(it.addr.lProjectId, it.addr.lDocumentId);
+	if (lDocId <= 0)
+		lDocId = it.addr.lDocumentId;
+
+	// 弹出版本列表让用户选择要下载的版本（默认最新，可回退到历史版本）
+	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
+	PWHelper::EnumDocumentVersions(it.addr.lProjectId, lDocId, arrVersions);
+	if (arrVersions.GetSize() > 0)
 	{
-		AfxMessageBox(_T("更新失败：") + PWHelper::GetLastErrorText());
+		CDlgVersionList dlg(it.addr.lProjectId, lDocId, it.addr.strVersionDate, this);
+		if (dlg.DoModal() != IDOK)
+			return;
+		lDocId = dlg.m_sel.lDocumentId;
+	}
+	// 版本枚举失败时退回下载最新版本
+
+	CString strLog;
+	strLog.Format(_T("开始更新 文件=%s 存储docID=%ld 解析docID=%ld 版本数=%d 选择docID=%ld"),
+		(LPCTSTR)it.strFileName, it.addr.lDocumentId, lDocId,
+		(int)arrVersions.GetSize(), lDocId);
+	LogUpdate(strLog);
+
+	CString strOutFile;
+	CString strErr;
+	if (!PWHelper::DownloadAndReplace(it.addr.lProjectId, lDocId,
+		it.strLocalPath, strErr, &strOutFile))
+	{
+		LogUpdate(_T("下载/替换失败：") + strErr);
+		AfxMessageBox(_T("更新失败：") + strErr);
 		return;
 	}
 
+	// 当前版本 = 所选版本的更新时间；最新版本 = 服务器上的最新更新时间
+	CString strCurDate = PWHelper::GetVersionDate(it.addr.lProjectId, lDocId);
 	CString strNewDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, it.addr.lDocumentId);
-	it.addr.strVersionDate = strNewDate;
-	PWHelper::SavePwAddr(PWHelper::GetLinkModelDir(), it.strFileName, it.addr);
+	CString strNewVer = PWHelper::GetLatestVersion(it.addr.lProjectId, it.addr.lDocumentId);
+	it.addr.lDocumentId = lDocId;
+	it.addr.strVersionDate = strCurDate;
+	it.addr.strLocalPath = it.strLocalPath;
+	PWHelper::SavePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, it.addr);
 
-	m_list.SetItemText(nRow, 1, GetLocalVersion(strOut));
+	strLog.Format(_T("更新完成 文件=%s 目标=%s 下载路径=%s 本地文件时间=%s 服务器最新=%s 服务器版本串=%s"),
+		(LPCTSTR)it.strFileName, (LPCTSTR)it.strLocalPath, (LPCTSTR)strOutFile,
+		(LPCTSTR)GetLocalVersion(it.strLocalPath), (LPCTSTR)strNewDate, (LPCTSTR)strNewVer);
+	LogUpdate(strLog);
+
+	m_list.SetItemText(nRow, 1, strCurDate.IsEmpty() ? GetLocalVersion(it.strLocalPath) : strCurDate);
 	m_list.SetItemText(nRow, 2, strNewDate.IsEmpty() ? _T("未检测") : strNewDate);
 	SetStatusText(_T("更新完成。"));
 }
