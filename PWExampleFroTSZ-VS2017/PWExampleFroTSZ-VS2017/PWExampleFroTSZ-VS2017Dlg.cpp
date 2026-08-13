@@ -70,6 +70,7 @@ BEGIN_MESSAGE_MAP(CPWExampleFroTSZVS2017Dlg, CDialogEx)
 	ON_WM_PAINT()
 	ON_WM_QUERYDRAGICON()
 	ON_BN_CLICKED(IDC_BTN_PW_LOGIN, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogin)
+	ON_BN_CLICKED(IDC_BTN_PW_LOGOUT, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogout)
 	ON_BN_CLICKED(IDC_BTN_PW_OPEN, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen)
 	ON_BN_CLICKED(IDC_BTN_PW_LINK, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink)
 	ON_BN_CLICKED(IDC_BTN_PW_LINKMGR, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLinkMgr)
@@ -170,6 +171,19 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogin()
 {
 	if (PWHelper::EnsureLogin(this))
 		AfxMessageBox(_T("已登录PW系统。"));
+}
+
+
+// 退出登录：断开当前账号，便于切换其他账号
+void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogout()
+{
+	if (AfxMessageBox(_T("确定退出当前PW账号？"), MB_YESNO | MB_ICONQUESTION) != IDYES)
+		return;
+
+	if (PWHelper::Logout())
+		AfxMessageBox(_T("已退出登录，可切换到其他账号重新登录。"));
+	else
+		AfxMessageBox(_T("退出登录失败：") + PWHelper::GetLastErrorText());
 }
 
 

@@ -44,6 +44,7 @@ namespace PWHelper
     // ---- 登录 / 数据源 ----
     BOOL    IsLoggedIn();                                 // aaApi_GetCurrentUserId()!=0
     BOOL    EnsureLogin(CWnd* pParent);                   // 未登录则弹登录框，返回是否成功
+    BOOL    Logout();                                     // 退出登录（断开活动数据源，便于切换账号）
     CString GetDatasourceName();                          // aaApi_GetActiveDatasourceName
 
     // ---- DLL 搜索路径（仅Win32，不得调用任何 aaApi_*，供延迟加载前使用）----

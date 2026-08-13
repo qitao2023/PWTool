@@ -111,6 +111,15 @@ BOOL EnsureLogin(CWnd* pParent)
     return (nRes == IDOK);
 }
 
+BOOL Logout()
+{
+    // 断开当前活动数据源连接，便于切换账号后重新登录
+    HDSOURCE hDs = aaApi_GetActiveDatasource();
+    if (hDs == 0)
+        return TRUE;   // 当前未连接，视为已退出
+    return aaApi_LogoutByHandle(hDs);
+}
+
 CString GetDatasourceName()
 {
     WCHAR szBuf[256] = { 0 };

@@ -19,6 +19,7 @@
 #define IDC_BTN_PW_LINK                 1102
 #define IDC_BTN_PW_LINKMGR              1103
 #define IDC_BTN_PW_UPLOAD               1104
+#define IDC_BTN_PW_LOGOUT               1105
 
 // DocListDlg 控件
 #define IDC_STATIC_CURFOLDER            1200

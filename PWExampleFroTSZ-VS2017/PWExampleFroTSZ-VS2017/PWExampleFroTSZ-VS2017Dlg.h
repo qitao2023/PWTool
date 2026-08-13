@@ -30,6 +30,7 @@ protected:
 public:
 	// PW协同
 	afx_msg void OnBnClickedPwLogin();
+	afx_msg void OnBnClickedPwLogout();
 	afx_msg void OnBnClickedPwOpen();
 	afx_msg void OnBnClickedPwLink();
 	afx_msg void OnBnClickedPwLinkMgr();
