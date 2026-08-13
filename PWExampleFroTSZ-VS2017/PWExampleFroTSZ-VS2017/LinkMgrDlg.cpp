@@ -17,7 +17,7 @@ static CString GetLocalVersion(LPCTSTR pszPath)
 {
 	CFileStatus fs;
 	if (CFile::GetStatus(pszPath, fs))
-		return fs.m_mtime.Format(_T("%Y-%m-%d %H:%M"));
+		return fs.m_mtime.Format(_T("%Y-%m-%d %H:%M:%S"));
 	return _T("--");
 }
 
