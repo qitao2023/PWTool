@@ -298,14 +298,22 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLinkMgr()
 
 
 // 上传：按PW地址来源上传当前模型
+// [修复] 首次上传：本地新建的模型在PW中还不存在，无法先通过"打开PW"下载，
+// 此时允许直接浏览选择本地模型文件（有PW地址来源→更新版本，无→作为新文档创建）。
 void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 {
-	if (m_strCurrentModelPath.IsEmpty())
+	CString strModel = m_strCurrentModelPath;
+
+	if (strModel.IsEmpty())
 	{
-		AfxMessageBox(_T("请先通过\"打开PW\"打开模型文件，再执行上传。"));
-		return;
+		CFileDialog dlg(TRUE, _T("dwg"), NULL,
+			OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
+			_T("模型文件 (*.dwg;*.dgn;*.dxf;*.model)|*.dwg;*.dgn;*.dxf;*.model|所有文件 (*.*)|*.*||"), this);
+		if (dlg.DoModal() != IDOK)
+			return;
+		strModel = dlg.GetPathName();
 	}
 
-	CDlgUpload dlg(m_strCurrentModelPath, this);
+	CDlgUpload dlg(strModel, this);
 	dlg.DoModal();
 }
