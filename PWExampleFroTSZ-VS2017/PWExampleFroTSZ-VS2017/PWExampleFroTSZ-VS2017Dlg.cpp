@@ -322,7 +322,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 	{
 		CFileDialog dlg(TRUE, _T("dwg"), NULL,
 			OFN_FILEMUSTEXIST | OFN_HIDEREADONLY,
-			_T("模型文件 (*.dwg;*.dgn;*.dxf;*.model)|*.dwg;*.dgn;*.dxf;*.model|所有文件 (*.*)|*.*||"), this);
+			_T("模型文件 (*.dwg;*.dgn;*.tsmgn;*.txt)|*.dwg;*.dgn;*.tsmgn;*.txt|所有文件 (*.*)|*.*||"), this);
 		if (dlg.DoModal() != IDOK)
 			return;
 		strModel = dlg.GetPathName();
