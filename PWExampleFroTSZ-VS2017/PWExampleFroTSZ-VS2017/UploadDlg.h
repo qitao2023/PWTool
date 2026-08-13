@@ -19,6 +19,8 @@ protected:
 	virtual BOOL OnInitDialog();
 	virtual void OnOK();
 
+	afx_msg void OnBnClickedBrowseTarget();   // 浏览：预先选择上传目标目录
+
 	DECLARE_MESSAGE_MAP()
 
 private:
@@ -28,4 +30,6 @@ private:
 	CString m_strVersionComment;
 	PWHelper::PWAddrInfo m_addr;
 	BOOL    m_bHasAddr;
+	LONG    m_lTargetProjectId;   // 已选上传目标目录ID（0=未选）
+	CString m_strTargetProjectName;
 };

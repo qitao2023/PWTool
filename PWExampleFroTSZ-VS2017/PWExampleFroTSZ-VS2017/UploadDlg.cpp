@@ -11,6 +11,7 @@
 #endif
 
 BEGIN_MESSAGE_MAP(CDlgUpload, CDialogEx)
+	ON_BN_CLICKED(IDC_BTN_BROWSE_TARGET, &CDlgUpload::OnBnClickedBrowseTarget)
 END_MESSAGE_MAP()
 
 
@@ -18,6 +19,7 @@ CDlgUpload::CDlgUpload(const CString& strModelPath, CWnd* pParent)
 	: CDialogEx(IDD_UPLOAD_DLG, pParent)
 	, m_strModelPath(strModelPath)
 	, m_bHasAddr(FALSE)
+	, m_lTargetProjectId(0)
 {
 }
 
@@ -47,12 +49,41 @@ BOOL CDlgUpload::OnInitDialog()
 			(LPCTSTR)m_addr.strDatasource, (LPCTSTR)m_addr.strProjectName,
 			m_addr.lProjectId, m_addr.lDocumentId, (LPCTSTR)m_addr.strVersionDate);
 		SetDlgItemText(IDC_EDIT_PWADDR, strAddr);
+		// 有地址=更新已有文档版本，目标目录选择无意义，禁用浏览
+		SetDlgItemText(IDC_EDIT_TARGETDIR, _T("更新已有文档版本，无需选择目录"));
+		GetDlgItem(IDC_BTN_BROWSE_TARGET)->EnableWindow(FALSE);
 	}
 	else
 	{
-		SetDlgItemText(IDC_EDIT_PWADDR, _T("无PW地址来源（将作为新文档上传到所选目录）"));
+		// 无地址=首次上传新文档：提示点[浏览...]或[上传]时选择目标目录
+		SetDlgItemText(IDC_EDIT_PWADDR, _T("无PW地址来源：首次上传，将作为新文档"));
+		m_lTargetProjectId = 0;
+		SetDlgItemText(IDC_EDIT_TARGETDIR, _T("（未选择，点[浏览...]或[上传]时选择）"));
 	}
 	return TRUE;
+}
+
+
+// 浏览：预先选择上传目标目录（仅新文档上传时使用）
+void CDlgUpload::OnBnClickedBrowseTarget()
+{
+	if (!PWHelper::EnsureLogin(this))
+		return;
+
+	LONG nPrjID = aaApi_SelectProjectDlg(this->m_hWnd, _T("请选择上传目标目录"), 0);
+	if (nPrjID <= 0)
+		return;
+
+	m_lTargetProjectId = nPrjID;
+
+	// 显示所选目录名
+	CString strName;
+	aaApi_SelectProject(nPrjID);
+	LPCWSTR psz = aaApi_GetProjectStringProperty(PROJ_PROP_NAME, 0);
+	if (psz != NULL)
+		strName = psz;
+	m_strTargetProjectName = strName;
+	SetDlgItemText(IDC_EDIT_TARGETDIR, strName.IsEmpty() ? _T("（已选择）") : strName);
 }
 
 void CDlgUpload::OnOK()
@@ -101,9 +132,13 @@ BOOL CDlgUpload::DoUpload()
 		if (!PWHelper::EnsureLogin(this))
 			return FALSE;
 
-		LONG nPrjID = aaApi_SelectProjectDlg(this->m_hWnd, _T("请选择上传目标目录"), 0);
+		LONG nPrjID = m_lTargetProjectId;   // [改进] 优先用对话框中已选目录
 		if (nPrjID <= 0)
-			return FALSE;
+		{
+			nPrjID = aaApi_SelectProjectDlg(this->m_hWnd, _T("请选择上传目标目录"), 0);
+			if (nPrjID <= 0)
+				return FALSE;
+		}
 
 		LONG lDocId = 0;
 		CString strErr;

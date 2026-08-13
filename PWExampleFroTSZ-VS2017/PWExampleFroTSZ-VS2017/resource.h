@@ -46,6 +46,9 @@
 #define IDC_EDIT_PWADDR                 1403
 #define IDC_STATIC_COMMENT              1404
 #define IDC_EDIT_VERSIONCOMMENT         1405
+#define IDC_STATIC_TARGETDIR            1406
+#define IDC_EDIT_TARGETDIR              1407
+#define IDC_BTN_BROWSE_TARGET           1408
 
 // Next default values for new objects
 //
