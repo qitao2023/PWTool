@@ -35,9 +35,10 @@ namespace PWHelper
         CString strVersion;
         CString strUpdateTime;
         LONG    lAccess;          // AADMS_ACCESS_*
+        LONG    lChosenDocId;     // 用户经"历史版本"列选定的版本docid；0=未选(打开/链接时用最新)
 
         PWDocItem()
-            : lProjectId(0), lDocumentId(0), lAccess(0)
+            : lProjectId(0), lDocumentId(0), lAccess(0), lChosenDocId(0)
         {
         }
     };

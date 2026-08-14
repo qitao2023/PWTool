@@ -29,6 +29,7 @@ protected:
     afx_msg void OnBnClickedSelectdir();
     afx_msg void OnBnClickedBrowseLocalpath();
     afx_msg void OnNMCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult);
+    afx_msg void OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult);   // 点击"历史版本"列
 
     DECLARE_MESSAGE_MAP()
 

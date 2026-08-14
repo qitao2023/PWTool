@@ -57,9 +57,40 @@ BOOL CDlgVersionList::OnInitDialog()
 	m_list.InsertColumn(1, _T("版本"), LVCFMT_LEFT, 80);
 	m_list.InsertColumn(2, _T("更新时间"), LVCFMT_LEFT, 150);
 	m_list.InsertColumn(3, _T("大小"), LVCFMT_LEFT, 70);
+	m_list.InsertColumn(4, _T("对象ID"), LVCFMT_LEFT, 90);
 
 	int nCurRow = -1;
 	PWHelper::EnumDocumentVersions(m_lProjectId, m_lDocumentId, m_arrVersions);
+
+	// ---- 诊断信息（排查"版本只有1个"）----
+	// 版本数API=aaApi_GetDocumentVersionCount 返回的服务器权威版本数；
+	// 项目内同名=该项目里与本文档同文件名的文档个数（多次上传若生成了多个同名"新文档"则>1，
+	// 若只更新同一文档则=1）。正常多版本应：版本数API>1 且 项目内同名=1。
+	LONG lAct = PWHelper::GetLatestDocumentId(m_lProjectId, m_lDocumentId);
+	if (lAct <= 0) lAct = m_lDocumentId;
+	LONG nTotal = aaApi_GetDocumentVersionCount(m_lProjectId, lAct);
+	LONG nSameName = 0;
+	if (aaApi_SelectDocument(m_lProjectId, lAct) == 1)
+	{
+		CString strName;
+		const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, 0);
+		if (psz) strName = psz;
+		if (!strName.IsEmpty())
+		{
+			LONG nAll = aaApi_SelectDocumentsByProjectId(m_lProjectId);
+			for (LONG i = 0; i < nAll; i++)
+			{
+				psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, i);
+				if (psz && strName.CompareNoCase(psz) == 0)
+					nSameName++;
+			}
+		}
+	}
+	CString strTitle;
+	strTitle.Format(_T("选择版本（共 %d 个） 版本数API=%ld 项目内同名=%ld docid=%ld"),
+		(int)m_arrVersions.GetSize(), nTotal, nSameName, lAct);
+	SetWindowText(strTitle);
+
 	for (INT_PTR i = 0; i < m_arrVersions.GetSize(); i++)
 	{
 		const PWHelper::PWDocVersionItem& v = m_arrVersions.GetAt(i);
@@ -81,6 +112,16 @@ BOOL CDlgVersionList::OnInitDialog()
 		m_list.SetItemText(nRow, 1, strVer);
 		m_list.SetItemText(nRow, 2, v.strUpdateTime);
 		m_list.SetItemText(nRow, 3, FormatFileSize(v.lSize));
+		CString strId;
+		strId.Format(_T("%ld"), v.lDocumentId);
+		m_list.SetItemText(nRow, 4, strId);
+	}
+
+	// 列表为空（异常情况）：加一行占位提示，避免空白弹窗
+	if (m_list.GetItemCount() == 0)
+	{
+		int nRow = m_list.InsertItem(0, _T("-"));
+		m_list.SetItemText(nRow, 1, _T("（未获取到版本）"));
 	}
 
 	// 默认选中当前版本；找不到则选最新

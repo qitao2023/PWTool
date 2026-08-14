@@ -5,6 +5,7 @@
 #include "PWExampleFroTSZ-VS2017.h"
 #include "DocListDlg.h"
 #include "PWHelper.h"
+#include "VersionListDlg.h"
 
 #include <afxtempl.h>
 #include <shlobj.h>
@@ -13,10 +14,14 @@
 #define new DEBUG_NEW
 #endif
 
+// "历史版本"列索引：点击该列弹出版本选择
+static const int COL_HISTVER = 4;
+
 BEGIN_MESSAGE_MAP(CDocListDlg, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_SELECTDIR, &CDocListDlg::OnBnClickedSelectdir)
 	ON_BN_CLICKED(IDC_BTN_BROWSE_LOCALPATH, &CDocListDlg::OnBnClickedBrowseLocalpath)
 	ON_NOTIFY(NM_CUSTOMDRAW, IDC_LIST_DOCS, &CDocListDlg::OnNMCustomdrawList)
+	ON_NOTIFY(NM_CLICK, IDC_LIST_DOCS, &CDocListDlg::OnNMClickList)
 END_MESSAGE_MAP()
 
 
@@ -49,6 +54,7 @@ BOOL CDocListDlg::OnInitDialog()
 	m_list.InsertColumn(1, _T("版本"), LVCFMT_LEFT, 60);
 	m_list.InsertColumn(2, _T("更新时间"), LVCFMT_LEFT, 120);
 	m_list.InsertColumn(3, _T("权限"), LVCFMT_LEFT, 60);
+	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 70);
 
 	if (m_mode == MODE_OPEN)
 	{
@@ -215,4 +221,46 @@ void CDocListDlg::OnNMCustomdrawList(NMHDR* pNMHDR, LRESULT* pResult)
 			}
 		}
 	}
+}
+
+// 点击"历史版本"列：弹出版本列表，选定版本后该行显示所选版本
+void CDocListDlg::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
+{
+	LPNMITEMACTIVATE pNMIA = reinterpret_cast<LPNMITEMACTIVATE>(pNMHDR);
+	*pResult = 0;
+
+	if (pNMIA->iItem < 0 || pNMIA->iItem >= (int)m_arrAll.GetSize())
+		return;
+	if (pNMIA->iSubItem != COL_HISTVER)
+		return;
+
+	if (!PWHelper::EnsureLogin(this))
+		return;
+
+	PWHelper::PWDocItem& item = m_arrAll.GetAt(pNMIA->iItem);
+
+	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
+	LONG nVer = PWHelper::EnumDocumentVersions(item.lProjectId, item.lDocumentId, arrVersions);
+	if (nVer < 0)
+	{
+		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());
+		return;
+	}
+
+	// 已选定过版本时，传入其更新时间供弹窗标记"(当前)"
+	CDlgVersionList dlg(item.lProjectId, item.lDocumentId,
+		(item.lChosenDocId > 0) ? item.strUpdateTime : _T(""), this);
+	if (dlg.DoModal() != IDOK)
+		return;
+
+	// 记录选定版本；外层表格该行显示所选版本，"打开/链接"时按此版本下载
+	item.lChosenDocId = dlg.m_sel.lDocumentId;
+	item.strVersion = dlg.m_sel.strVersion;
+	item.strUpdateTime = dlg.m_sel.strUpdateTime;
+
+	CString strVer = dlg.m_sel.strVersion;
+	if (strVer.IsEmpty())
+		strVer = _T("?");
+	m_list.SetItemText(pNMIA->iItem, 1, strVer + _T(" (所选)"));
+	m_list.SetItemText(pNMIA->iItem, COL_HISTVER, strVer);
 }

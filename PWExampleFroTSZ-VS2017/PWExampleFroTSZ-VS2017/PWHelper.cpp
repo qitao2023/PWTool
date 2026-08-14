@@ -416,26 +416,66 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
     if (lProjectId <= 0 || lDocumentId <= 0)
         return 0;
 
-    // 先从任意版本定位到当前(最新)版本再枚举版本链：
-    // SelectDocumentVersions 对非活动(历史)版本可能枚举不到。
+    // 先从任意版本定位到当前(最新)版本：只有活动版本能枚举出完整版本链
     lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
     if (lDocumentId <= 0)
         return 0;
 
-    LONG nCount = aaApi_SelectDocumentVersions(lProjectId, lDocumentId);
-    if (nCount <= 0)
-        return nCount;
+    // [修复] 主枚举改用动态数据缓冲区 API aaApi_SelectDocumentDataBufferVersions，
+    // 它明确返回"指定文档的所有版本"。原用静态 aaApi_SelectDocumentVersions 在部分
+    // 数据源上只返回活动版本本身（SDK 注"Only an active document has versions"），
+    // 导致历史版本永远看不到——这是"只能看到一个版本"的根因。
+    HAADMSBUFFER hBuf = aaApi_SelectDocumentDataBufferVersions(lProjectId, lDocumentId);
+    if (hBuf != NULL)
+    {
+        LONG nCount = aaApi_DmsDataBufferGetCount(hBuf);
+        for (LONG i = 0; i < nCount; i++)
+        {
+            PWDocVersionItem item;
+            item.lDocumentId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_ID, i);
+            item.lVersionNo = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_VERSIONNO, i);
+            item.lSize = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_SIZE, i);
+            const WCHAR* psz = aaApi_DmsDataBufferGetStringProperty(hBuf, DOC_PROP_VERSION, i);
+            if (psz) item.strVersion = psz;
+            psz = aaApi_DmsDataBufferGetStringProperty(hBuf, DOC_PROP_FILE_UPDATE_TIME, i);
+            if (psz) item.strUpdateTime = psz;
+            arrVersions.Add(item);
+        }
+        aaApi_DmsDataBufferFree(hBuf);
+    }
 
-    for (LONG i = 0; i < nCount; i++)
+    // 动态缓冲区方式失败时，退回静态 SelectDocumentVersions
+    if (arrVersions.GetSize() == 0)
+    {
+        LONG nCount = aaApi_SelectDocumentVersions(lProjectId, lDocumentId);
+        for (LONG i = 0; nCount > 0 && i < nCount; i++)
+        {
+            PWDocVersionItem item;
+            item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
+            item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
+            item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
+            const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
+            if (psz) item.strVersion = psz;
+            psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
+            if (psz) item.strUpdateTime = psz;
+            arrVersions.Add(item);
+        }
+    }
+
+    // 两种方式都枚举不到，但文档必含活动版本：补一行，保证版本界面始终可见
+    if (arrVersions.GetSize() == 0)
     {
         PWDocVersionItem item;
-        item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
-        item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
-        item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
-        const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
-        if (psz) item.strVersion = psz;
-        psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
-        if (psz) item.strUpdateTime = psz;
+        item.lDocumentId = lDocumentId;
+        if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+        {
+            item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, 0);
+            item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, 0);
+            const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, 0);
+            if (psz) item.strVersion = psz;
+            psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, 0);
+            if (psz) item.strUpdateTime = psz;
+        }
         arrVersions.Add(item);
     }
 
@@ -449,7 +489,7 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
                 arrVersions[j] = t;
             }
 
-    return arrVersions.GetSize();
+    return (LONG)arrVersions.GetSize();
 }
 
 BOOL DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile,

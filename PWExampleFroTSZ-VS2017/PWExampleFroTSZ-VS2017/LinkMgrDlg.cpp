@@ -39,12 +39,16 @@ static void LogUpdate(LPCTSTR pszLine)
 	}
 }
 
+// "历史版本"列索引：点击该列弹出版本选择
+static const int COL_HISTVER = 5;
+
 BEGIN_MESSAGE_MAP(CDlgLinkMgr, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_ADD, &CDlgLinkMgr::OnBnClickedAdd)
 	ON_BN_CLICKED(IDC_BTN_DEL, &CDlgLinkMgr::OnBnClickedDel)
 	ON_BN_CLICKED(IDC_BTN_LINK, &CDlgLinkMgr::OnBnClickedLink)
 	ON_BN_CLICKED(IDC_BTN_UNLINK, &CDlgLinkMgr::OnBnClickedUnlink)
 	ON_BN_CLICKED(IDC_BTN_UPDATE, &CDlgLinkMgr::OnBnClickedUpdate)
+	ON_NOTIFY(NM_CLICK, IDC_LIST_LINKMODELS, &CDlgLinkMgr::OnNMClickList)
 END_MESSAGE_MAP()
 
 
@@ -73,6 +77,7 @@ BOOL CDlgLinkMgr::OnInitDialog()
 	m_list.InsertColumn(2, _T("最新版本"), LVCFMT_LEFT, 110);
 	m_list.InsertColumn(3, _T("状态"), LVCFMT_LEFT, 60);
 	m_list.InsertColumn(4, _T("PW来源"), LVCFMT_LEFT, 60);
+	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 70);
 
 	ReloadList();
 	if (PWHelper::IsLoggedIn())
@@ -375,17 +380,21 @@ void CDlgLinkMgr::OnBnClickedUpdate()
 	if (lDocId <= 0)
 		lDocId = it.addr.lDocumentId;
 
-	// 弹出版本列表让用户选择要下载的版本（默认最新，可回退到历史版本）
+	// 弹出版本列表让用户选择要下载的版本（默认最新，可回退到历史版本）。
+	// [修复] 原仅在版本数>0时才弹窗，单版本文档会静默跳过；现改为总是弹出，失败时明确报错。
 	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-	PWHelper::EnumDocumentVersions(it.addr.lProjectId, lDocId, arrVersions);
-	if (arrVersions.GetSize() > 0)
+	LONG nVer = PWHelper::EnumDocumentVersions(it.addr.lProjectId, lDocId, arrVersions);
+	if (nVer < 0)
+	{
+		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());
+		return;
+	}
 	{
 		CDlgVersionList dlg(it.addr.lProjectId, lDocId, it.addr.strVersionDate, this);
 		if (dlg.DoModal() != IDOK)
 			return;
 		lDocId = dlg.m_sel.lDocumentId;
 	}
-	// 版本枚举失败时退回下载最新版本
 
 	CString strLog;
 	strLog.Format(_T("开始更新 文件=%s 存储docID=%ld 解析docID=%ld 版本数=%d 选择docID=%ld"),
@@ -420,4 +429,70 @@ void CDlgLinkMgr::OnBnClickedUpdate()
 	m_list.SetItemText(nRow, 1, strCurDate.IsEmpty() ? GetLocalVersion(it.strLocalPath) : strCurDate);
 	m_list.SetItemText(nRow, 2, strNewDate.IsEmpty() ? _T("未检测") : strNewDate);
 	SetStatusText(_T("更新完成。"));
+}
+
+// 点击"历史版本"列：弹出版本列表，选定版本后下载覆盖本地链接文件并更新该行
+void CDlgLinkMgr::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
+{
+	LPNMITEMACTIVATE pNMIA = reinterpret_cast<LPNMITEMACTIVATE>(pNMHDR);
+	*pResult = 0;
+
+	if (pNMIA->iItem < 0 || pNMIA->iItem >= (int)m_arrItems.GetSize())
+		return;
+	if (pNMIA->iSubItem != COL_HISTVER)
+		return;
+
+	LinkItem& it = m_arrItems[pNMIA->iItem];
+	if (!it.bHasAddr || it.addr.lDocumentId <= 0)
+	{
+		AfxMessageBox(_T("该模型没有PW地址来源，无法查看历史版本。"));
+		return;
+	}
+
+	if (!PWHelper::EnsureLogin(this))
+		return;
+
+	// 解析当前最新版本 docid：INI 中记录的 docid 可能指向历史版本
+	LONG lDocId = PWHelper::GetLatestDocumentId(it.addr.lProjectId, it.addr.lDocumentId);
+	if (lDocId <= 0)
+		lDocId = it.addr.lDocumentId;
+
+	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
+	LONG nVer = PWHelper::EnumDocumentVersions(it.addr.lProjectId, lDocId, arrVersions);
+	if (nVer < 0)
+	{
+		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());
+		return;
+	}
+
+	CDlgVersionList dlg(it.addr.lProjectId, lDocId, it.addr.strVersionDate, this);
+	if (dlg.DoModal() != IDOK)
+		return;
+	lDocId = dlg.m_sel.lDocumentId;
+
+	// 下载所选版本覆盖本地链接文件，并更新该行"当前版本"列
+	CString strErr;
+	CString strOutFile;
+	if (!PWHelper::DownloadAndReplace(it.addr.lProjectId, lDocId, it.strLocalPath, strErr, &strOutFile))
+	{
+		LogUpdate(_T("下载/替换失败：") + strErr);
+		AfxMessageBox(_T("切换版本失败：") + strErr);
+		return;
+	}
+
+	it.addr.lDocumentId = lDocId;
+	it.addr.strVersionDate = PWHelper::GetVersionDate(it.addr.lProjectId, lDocId);
+	it.addr.strLocalPath = it.strLocalPath;
+	PWHelper::SavePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, it.addr);
+
+	CString strCur = it.addr.strVersionDate;
+	m_list.SetItemText(pNMIA->iItem, 1, strCur.IsEmpty() ? GetLocalVersion(it.strLocalPath) : strCur);
+	m_list.SetItemText(pNMIA->iItem, COL_HISTVER,
+		dlg.m_sel.strVersion.IsEmpty() ? _T("?") : dlg.m_sel.strVersion);
+
+	CString strLog;
+	strLog.Format(_T("切换历史版本 文件=%s 版本docID=%ld 版本串=%s 下载路径=%s"),
+		(LPCTSTR)it.strFileName, lDocId, (LPCTSTR)dlg.m_sel.strVersion, (LPCTSTR)strOutFile);
+	LogUpdate(strLog);
+	SetStatusText(_T("已切换并下载所选版本。"));
 }

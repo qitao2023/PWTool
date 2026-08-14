@@ -23,6 +23,7 @@ protected:
 	afx_msg void OnBnClickedLink();
 	afx_msg void OnBnClickedUnlink();
 	afx_msg void OnBnClickedUpdate();
+	afx_msg void OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult);   // 点击"历史版本"列
 
 	DECLARE_MESSAGE_MAP()
 

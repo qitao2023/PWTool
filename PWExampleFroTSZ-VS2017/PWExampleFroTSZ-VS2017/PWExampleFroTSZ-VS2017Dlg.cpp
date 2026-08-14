@@ -209,19 +209,34 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen()
 		return;
 	}
 
-	// 选择要打开的版本：默认最新，可回退到历史版本（与"链接管理→更新"的版本选择一致）
+	// 决定要打开的版本：
+	//  - 若用户在文档列表的"历史版本"列已选定版本，直接使用；
+	//  - 否则弹出版本列表让用户选择（默认最新，可回退到历史版本）。
+	// [修复] 原仅在版本数>0时才弹窗：单版本文档(SelectDocumentVersions返回0)会静默跳过，
+	// 导致版本界面从未出现。现改为总是弹出，保证界面可见；枚举失败时明确报错。
 	LONG lDocId = item.lDocumentId;
-	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-	PWHelper::EnumDocumentVersions(item.lProjectId, item.lDocumentId, arrVersions);
-	if (arrVersions.GetSize() > 0)
+	if (item.lChosenDocId > 0)
 	{
-		// 打开前本地尚无"当前版本"概念，curVersionDate 传空，仅标记最新
-		CDlgVersionList dlgVer(item.lProjectId, item.lDocumentId, _T(""), this);
-		if (dlgVer.DoModal() != IDOK)
-			return;
-		lDocId = dlgVer.m_sel.lDocumentId;
+		lDocId = item.lChosenDocId;
 	}
-	// 版本枚举失败时退回最新版本：列表中的 docid 可能已落后于服务器
+	else
+	{
+		CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
+		LONG nVer = PWHelper::EnumDocumentVersions(item.lProjectId, item.lDocumentId, arrVersions);
+		if (nVer < 0)
+		{
+			AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());
+			return;
+		}
+		// 打开前本地尚无"当前版本"概念，curVersionDate 传空，仅标记最新
+		{
+			CDlgVersionList dlgVer(item.lProjectId, item.lDocumentId, _T(""), this);
+			if (dlgVer.DoModal() != IDOK)
+				return;
+			lDocId = dlgVer.m_sel.lDocumentId;
+		}
+	}
+	// 版本选择异常时退回最新版本：列表中的 docid 可能已落后于服务器
 	if (lDocId <= 0)
 		lDocId = PWHelper::GetLatestDocumentId(item.lProjectId, item.lDocumentId);
 
@@ -293,8 +308,10 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 				continue;
 		}
 
-		// 链接默认取最新版本：列表中的 docid 可能已落后于服务器
-		LONG lDocId = PWHelper::GetLatestDocumentId(item.lProjectId, item.lDocumentId);
+		// 链接取用户经"历史版本"列选定的版本；未选定则用最新（列表中的 docid 可能已落后于服务器）
+		LONG lDocId = (item.lChosenDocId > 0)
+			? item.lChosenDocId
+			: PWHelper::GetLatestDocumentId(item.lProjectId, item.lDocumentId);
 		if (lDocId <= 0)
 			lDocId = item.lDocumentId;
 
