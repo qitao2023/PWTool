@@ -222,7 +222,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen()
 	else
 	{
 		CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-		LONG nVer = PWHelper::EnumDocumentVersions(item.lProjectId, item.lDocumentId, arrVersions);
+		LONG nVer = PWHelper::EnumSameNameDocuments(item.lProjectId, item.lDocumentId, arrVersions);
 		if (nVer < 0)
 		{
 			AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());

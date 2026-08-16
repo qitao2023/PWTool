@@ -105,8 +105,10 @@ BOOL CDlgUpload::DoUpload()
 			return FALSE;
 
 		CString strErr;
-		if (!PWHelper::UploadNewVersion(m_addr.lProjectId, m_addr.lDocumentId,
-			m_strModelPath, strFolder, m_strVersionComment, strErr))
+		BOOL bNewVersion = FALSE;
+		if (!PWHelper::UploadNewVersion(this->GetSafeHwnd(),
+			m_addr.lProjectId, m_addr.lDocumentId,
+			m_strModelPath, strFolder, m_strVersionComment, strErr, &bNewVersion))
 		{
 			AfxMessageBox(_T("上传失败：") + strErr);
 			return FALSE;
@@ -126,8 +128,12 @@ BOOL CDlgUpload::DoUpload()
 		PWHelper::SavePwAddr(strFolder, strModelFileName, m_addr);
 
 		CString strMsg;
-		strMsg.Format(_T("上传成功，已更新PW服务器上的文档版本。\n服务器当前版本：%s\n文件更新时间：%s"),
-			(LPCTSTR)strNewVer, (LPCTSTR)strNewDate);
+		if (bNewVersion)
+			strMsg.Format(_T("上传成功，已生成新版本。\n服务器当前版本：%s\n文件更新时间：%s"),
+				(LPCTSTR)strNewVer, (LPCTSTR)strNewDate);
+		else
+			strMsg.Format(_T("上传成功（未勾选\"生成新版本\"，仅更新当前版本）。\n服务器当前版本：%s\n文件更新时间：%s"),
+				(LPCTSTR)strNewVer, (LPCTSTR)strNewDate);
 		AfxMessageBox(strMsg);
 		return TRUE;
 	}

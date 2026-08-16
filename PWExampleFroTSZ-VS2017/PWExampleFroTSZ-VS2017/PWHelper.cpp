@@ -492,6 +492,59 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
     return (LONG)arrVersions.GetSize();
 }
 
+// 按文件名列出项目内所有同名文档（每个同名文档视为一个"版本"），从新到旧排序。
+// [数据源] 版本集枚举 API(SelectDocumentDataBufferVersions / GetDocumentVersionCount)
+// 在本数据源只返回活动版本/0，但 SelectDocumentsByProjectId 会返回所有文档行（含各版本），
+// 因此用"按文件名匹配"来枚举版本。返回值=数量。
+LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
+                           CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions)
+{
+    arrVersions.RemoveAll();
+    if (lProjectId <= 0 || lDocumentId <= 0)
+        return 0;
+
+    // 取本文档的文件名
+    CString strName;
+    if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+    {
+        const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, 0);
+        if (psz) strName = psz;
+    }
+    if (strName.IsEmpty())
+        return 0;
+
+    // 扫描项目内所有文档行（含各版本），按文件名匹配
+    LONG nAll = aaApi_SelectDocumentsByProjectId(lProjectId);
+    for (LONG i = 0; i < nAll; i++)
+    {
+        const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, i);
+        if (!psz || strName.CompareNoCase(psz) != 0)
+            continue;
+
+        PWDocVersionItem item;
+        item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
+        item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
+        item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
+        psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
+        if (psz) item.strVersion = psz;
+        psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
+        if (psz) item.strUpdateTime = psz;
+        arrVersions.Add(item);
+    }
+
+    // 按 docid 从大到小排序（后创建的新版本在前）
+    for (INT_PTR i = 0; i + 1 < arrVersions.GetSize(); i++)
+        for (INT_PTR j = i + 1; j < arrVersions.GetSize(); j++)
+            if (arrVersions[i].lDocumentId < arrVersions[j].lDocumentId)
+            {
+                PWDocVersionItem t = arrVersions[i];
+                arrVersions[i] = arrVersions[j];
+                arrVersions[j] = t;
+            }
+
+    return (LONG)arrVersions.GetSize();
+}
+
 BOOL DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile,
                         CString& strErr, CString* pstrOutFile)
 {
@@ -582,10 +635,13 @@ LONG GetDocumentAccess(LONG lProjectId, LONG lDocumentId, LONG lIndex)
     return aaApi_GetDocumentAccess(lProjectId, lDocumentId, lIndex);
 }
 
-BOOL UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
-                      LPCTSTR pszWorkDir, const CString& strComment, CString& strErr)
+BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
+                      LPCTSTR pszLocalFile, LPCTSTR pszWorkDir,
+                      const CString& strComment, CString& strErr,
+                      BOOL* pOutNewVersion)
 {
     strErr.Empty();
+    if (pOutNewVersion) *pOutNewVersion = FALSE;
 
     // 始终基于当前(最新)版本检入新版本：INI 中的 docid 可能指向历史版本
     lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
@@ -597,7 +653,6 @@ BOOL UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
 
     // 检查写权限。[修复记录] aaApi_GetDocumentAccess 返回的是访问级别而非位掩码：
     //   AADMS_ACCESS_WRITE=可修改/可checkin，AADMS_ACCESS_READ=只读。
-    //   原误用 AADMS_ACCESS_FWRITE(0x08) 位判断会误判只读，已改为 AADMS_ACCESS_WRITE。
     LONG lAccess = aaApi_GetDocumentAccess(lProjectId, lDocumentId, -1);
     if ((lAccess & AADMS_ACCESS_WRITE) == 0)
     {
@@ -605,7 +660,7 @@ BOOL UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
         return FALSE;
     }
 
-    // 用临时子目录作为工作副本，避免 CheckOut 覆盖用户本地编辑过的文件
+    // 用临时子目录作为工作副本
     CString strTempDir(pszWorkDir);
     if (!strTempDir.IsEmpty() && strTempDir[strTempDir.GetLength() - 1] != _T('\\'))
         strTempDir += _T('\\');
@@ -632,15 +687,39 @@ BOOL UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
         return FALSE;
     }
 
-    // 3. 回传服务器，保留工作副本
-    if (!aaApi_CheckInDocumentLeaveCopy(lProjectId, lDocumentId))
-    {
-        strErr = GetLastErrorText();
-        return FALSE;
-    }
+    // 3. 弹出官方检入对话框完成检入（可生成新版本）。
+    //    [数据源] 该数据源由 Workflow/Rules Engine 控制，直接 API 检入不生成新版本；
+    //    官方检入对话框走正确工作流路径，用户勾选"生成新版本"即可保存版本历史，
+    //    版本号留空由系统自动分配。
+    AADOC_ITEM docItem;
+    docItem.lProjectId = lProjectId;
+    docItem.lDocumentId = lDocumentId;
+
+    WCHAR szComment[512] = { 0 };
+    _tcsncpy_s(szComment, 512, strComment, _TRUNCATE);
+
+    BOOL bNewVersion = FALSE;
+    LONG_PTR nRes = aaApi_DocumentCheckInActionDlg2(
+        hWndParent,
+        _T("上传 - 检入确认（勾选\"生成新版本\"可保存版本历史）"),
+        0,                                              // flags（保留，传0）
+        AACHECKINDLGF_DISABLE_FREE_BTN | AACHECKINDLGF_DISABLE_UPDATE_BTN,  // 只允许检入
+        &docItem, 1, &bNewVersion, szComment, 512);
 
     // 清理临时工作副本
     DeleteFile(szOut);
+
+    // [实测] 检入对话框成功执行检入时返回 IDCHECK_IN(1053)，而非 IDOK；两者都视为成功
+    if (nRes != IDOK && nRes != IDCHECK_IN)
+    {
+        CString strFail;
+        strFail.Format(_T("检入未完成（返回码=%ld）。"), (LONG)nRes);
+        strErr = strFail;
+        return FALSE;
+    }
+
+    if (pOutNewVersion)
+        *pOutNewVersion = bNewVersion;
     return TRUE;
 }
 

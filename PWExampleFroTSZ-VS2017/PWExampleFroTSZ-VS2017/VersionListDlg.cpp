@@ -60,35 +60,12 @@ BOOL CDlgVersionList::OnInitDialog()
 	m_list.InsertColumn(4, _T("对象ID"), LVCFMT_LEFT, 90);
 
 	int nCurRow = -1;
-	PWHelper::EnumDocumentVersions(m_lProjectId, m_lDocumentId, m_arrVersions);
+	// 按文件名列出所有同名文档作为"版本"（版本集枚举 API 在本数据源只返回活动版本，
+	// 文档列表枚举能返回全部，故用 EnumSameNameDocuments）。
+	PWHelper::EnumSameNameDocuments(m_lProjectId, m_lDocumentId, m_arrVersions);
 
-	// ---- 诊断信息（排查"版本只有1个"）----
-	// 版本数API=aaApi_GetDocumentVersionCount 返回的服务器权威版本数；
-	// 项目内同名=该项目里与本文档同文件名的文档个数（多次上传若生成了多个同名"新文档"则>1，
-	// 若只更新同一文档则=1）。正常多版本应：版本数API>1 且 项目内同名=1。
-	LONG lAct = PWHelper::GetLatestDocumentId(m_lProjectId, m_lDocumentId);
-	if (lAct <= 0) lAct = m_lDocumentId;
-	LONG nTotal = aaApi_GetDocumentVersionCount(m_lProjectId, lAct);
-	LONG nSameName = 0;
-	if (aaApi_SelectDocument(m_lProjectId, lAct) == 1)
-	{
-		CString strName;
-		const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, 0);
-		if (psz) strName = psz;
-		if (!strName.IsEmpty())
-		{
-			LONG nAll = aaApi_SelectDocumentsByProjectId(m_lProjectId);
-			for (LONG i = 0; i < nAll; i++)
-			{
-				psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, i);
-				if (psz && strName.CompareNoCase(psz) == 0)
-					nSameName++;
-			}
-		}
-	}
 	CString strTitle;
-	strTitle.Format(_T("选择版本（共 %d 个） 版本数API=%ld 项目内同名=%ld docid=%ld"),
-		(int)m_arrVersions.GetSize(), nTotal, nSameName, lAct);
+	strTitle.Format(_T("选择版本（共 %d 个）"), (int)m_arrVersions.GetSize());
 	SetWindowText(strTitle);
 
 	for (INT_PTR i = 0; i < m_arrVersions.GetSize(); i++)

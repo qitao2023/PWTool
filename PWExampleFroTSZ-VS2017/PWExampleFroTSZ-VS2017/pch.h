@@ -18,6 +18,7 @@
 #include <AADMSAPI.FDF>
 #include <AAWINDMS.FDF>
 #include <AAWDDEF.H>
+#include <AAWINDEF.H>   // IDCHECK_IN 等检入对话框返回码
 #include <AAAPIVER.H>
 #include <AAATYPES.H>
 #include <AAWINAPI.FDF>

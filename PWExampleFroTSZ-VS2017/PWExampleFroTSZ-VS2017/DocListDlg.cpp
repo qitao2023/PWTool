@@ -240,7 +240,7 @@ void CDocListDlg::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
 	PWHelper::PWDocItem& item = m_arrAll.GetAt(pNMIA->iItem);
 
 	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-	LONG nVer = PWHelper::EnumDocumentVersions(item.lProjectId, item.lDocumentId, arrVersions);
+	LONG nVer = PWHelper::EnumSameNameDocuments(item.lProjectId, item.lDocumentId, arrVersions);
 	if (nVer < 0)
 	{
 		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());

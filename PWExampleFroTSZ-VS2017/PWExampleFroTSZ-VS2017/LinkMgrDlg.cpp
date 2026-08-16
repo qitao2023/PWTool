@@ -383,7 +383,7 @@ void CDlgLinkMgr::OnBnClickedUpdate()
 	// 弹出版本列表让用户选择要下载的版本（默认最新，可回退到历史版本）。
 	// [修复] 原仅在版本数>0时才弹窗，单版本文档会静默跳过；现改为总是弹出，失败时明确报错。
 	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-	LONG nVer = PWHelper::EnumDocumentVersions(it.addr.lProjectId, lDocId, arrVersions);
+	LONG nVer = PWHelper::EnumSameNameDocuments(it.addr.lProjectId, lDocId, arrVersions);
 	if (nVer < 0)
 	{
 		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());
@@ -458,7 +458,7 @@ void CDlgLinkMgr::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
 		lDocId = it.addr.lDocumentId;
 
 	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-	LONG nVer = PWHelper::EnumDocumentVersions(it.addr.lProjectId, lDocId, arrVersions);
+	LONG nVer = PWHelper::EnumSameNameDocuments(it.addr.lProjectId, lDocId, arrVersions);
 	if (nVer < 0)
 	{
 		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());

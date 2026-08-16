@@ -94,6 +94,11 @@ namespace PWHelper
     // 枚举文档的所有版本（按版本号从新到旧排序），返回版本数量；失败返回<=0。
     LONG    EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
                                  CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
+    // 按文件名列出项目内所有同名文档（每个同名文档视为一个"版本"）。
+    // [数据源] 版本集枚举 API(SelectDocumentDataBufferVersions) 在本数据源只返回活动版本，
+    // 但 SelectDocumentsByProjectId 能返回全部同名文档——用后者枚举版本。
+    LONG    EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
+                                  CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
     // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
     BOOL    DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir, CString& strOutFile); // CopyOutDocument
     // 下载指定版本并覆盖本地链接文件。下载直接落到目标文件所在目录；若 CopyOut 因同名文件
@@ -105,8 +110,13 @@ namespace PWHelper
     CString GetLatestVersionDate(LONG lProjectId, LONG lDocumentId);      // 解析最新版本 + FILE_UPDATE_TIME
     CString GetLatestVersion(LONG lProjectId, LONG lDocumentId);          // 解析最新版本 + DOC_PROP_VERSION
     LONG    GetDocumentAccess(LONG lProjectId, LONG lDocumentId, LONG lIndex = -1); // aaApi_GetDocumentAccess（lIndex>=0时用当前buffer，不重新select）
-    BOOL    UploadNewVersion(LONG lProjectId, LONG lDocumentId, LPCTSTR pszLocalFile,
-                             LPCTSTR pszWorkDir, const CString& strComment, CString& strErr); // CheckOut->覆盖->CheckInLeaveCopy
+    // 上传新版本：CheckOut->覆盖工作副本->弹出官方检入对话框（走工作流路径，可生成新版本）。
+    // [数据源] Rules Engine 控制版本时，直接 API 检入不建版本；官方检入对话框可让用户
+    // 确认"生成新版本"，版本号留空系统自动分配。返回是否成功；pOutNewVersion 非空回传是否生成了新版本。
+    BOOL    UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
+                             LPCTSTR pszLocalFile, LPCTSTR pszWorkDir,
+                             const CString& strComment, CString& strErr,
+                             BOOL* pOutNewVersion = NULL);
     BOOL    CreateNewDocument(LONG lProjectId, LPCTSTR pszLocalFile, const CString& strComment,
                               LONG& lDocId, CString& strErr);             // aaApi_CreateDocument
 
