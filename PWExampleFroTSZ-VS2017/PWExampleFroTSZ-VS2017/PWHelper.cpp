@@ -496,6 +496,29 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
 // [数据源] 版本集枚举 API(SelectDocumentDataBufferVersions / GetDocumentVersionCount)
 // 在本数据源只返回活动版本/0，但 SelectDocumentsByProjectId 会返回所有文档行（含各版本），
 // 因此用"按文件名匹配"来枚举版本。返回值=数量。
+// 比较版本串（A<B<...<Z<AA）：返回 a>b ? 1 : (a<b ? -1 : 0)
+int CompareVersionStrings(LPCTSTR pszA, LPCTSTR pszB)
+{
+    CString a(pszA), b(pszB);
+    auto value = [](const CString& s) -> __int64
+    {
+        __int64 v = 0;
+        for (int i = 0; i < s.GetLength(); i++)
+        {
+            TCHAR ch = s[i];
+            if (ch >= _T('a') && ch <= _T('z')) ch -= 32;
+            if (ch < _T('A') || ch > _T('Z'))
+                return (__int64)(ch & 0xFF);   // 非字母：用首字符简单比较
+            v = v * 26 + (ch - _T('A') + 1);
+        }
+        return v;
+    };
+    __int64 va = value(a), vb = value(b);
+    if (va > vb) return 1;
+    if (va < vb) return -1;
+    return 0;
+}
+
 LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
                            CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions)
 {
@@ -525,6 +548,7 @@ LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
         item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
         item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
         item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
+        item.lOriginalNo = aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, i);
         psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
         if (psz) item.strVersion = psz;
         psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
@@ -532,15 +556,23 @@ LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
         arrVersions.Add(item);
     }
 
-    // 按 docid 从大到小排序（后创建的新版本在前）
+    // 排序：活动版本(ORIGINALNO=0)最前(=最新)，其余按版本串从新到旧。
+    // [修复] 不能按 docid 判断新旧：创建新版本时旧版本会被重新分配更高的 docid。
     for (INT_PTR i = 0; i + 1 < arrVersions.GetSize(); i++)
         for (INT_PTR j = i + 1; j < arrVersions.GetSize(); j++)
-            if (arrVersions[i].lDocumentId < arrVersions[j].lDocumentId)
+        {
+            PWDocVersionItem& a = arrVersions[i];
+            PWDocVersionItem& b = arrVersions[j];
+            BOOL bSwap = FALSE;
+            if (a.lOriginalNo != 0 && b.lOriginalNo == 0)
+                bSwap = TRUE;   // a是历史、b是活动 → b应在前
+            else if (a.lOriginalNo == b.lOriginalNo && CompareVersionStrings(a.strVersion, b.strVersion) < 0)
+                bSwap = TRUE;   // 同类型：版本串大的在前
+            if (bSwap)
             {
-                PWDocVersionItem t = arrVersions[i];
-                arrVersions[i] = arrVersions[j];
-                arrVersions[j] = t;
+                PWDocVersionItem t = a; a = b; b = t;
             }
+        }
 
     return (LONG)arrVersions.GetSize();
 }
@@ -635,6 +667,24 @@ LONG GetDocumentAccess(LONG lProjectId, LONG lDocumentId, LONG lIndex)
     return aaApi_GetDocumentAccess(lProjectId, lDocumentId, lIndex);
 }
 
+// 回调触发标记：检入操作是否实际执行（用于区分"取消"与"检入"）
+static BOOL g_bCheckInFired = FALSE;
+
+// 检入对话框回调：检入操作时把 isNewVersionCreated 强制置 TRUE，
+// 使每次检入都自动生成新版本（无需用户手动勾选"生成新版本"）
+static LONG_PTR CALLBACK CheckInDlgForceNewVersionCb(AAPARAM callbackParam,
+    eCheckInDlgMessage_t msgID, LPVOID msgData, LONG_PTR unhandledReturnCode)
+{
+    if (msgID == AACHECKINDLG_MSG_CHECK_IN)
+    {
+        g_bCheckInFired = TRUE;
+        if (msgData != NULL)
+            ((LPAACHECKINDLG_MSG_DATA)msgData)->isNewVersionCreated = TRUE;   // 强制生成新版本
+        return IDOK;
+    }
+    return unhandledReturnCode;
+}
+
 BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
                       LPCTSTR pszLocalFile, LPCTSTR pszWorkDir,
                       const CString& strComment, CString& strErr,
@@ -687,10 +737,10 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
         return FALSE;
     }
 
-    // 3. 弹出官方检入对话框完成检入（可生成新版本）。
+    // 3. 弹出官方检入对话框完成检入；回调强制生成新版本。
     //    [数据源] 该数据源由 Workflow/Rules Engine 控制，直接 API 检入不生成新版本；
-    //    官方检入对话框走正确工作流路径，用户勾选"生成新版本"即可保存版本历史，
-    //    版本号留空由系统自动分配。
+    //    官方检入对话框走正确工作流路径。回调把 isNewVersionCreated 置 TRUE，
+    //    使每次检入都自动生成新版本，无需用户手动勾选。
     AADOC_ITEM docItem;
     docItem.lProjectId = lProjectId;
     docItem.lDocumentId = lDocumentId;
@@ -698,28 +748,33 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
     WCHAR szComment[512] = { 0 };
     _tcsncpy_s(szComment, 512, strComment, _TRUNCATE);
 
-    BOOL bNewVersion = FALSE;
-    LONG_PTR nRes = aaApi_DocumentCheckInActionDlg2(
+    g_bCheckInFired = FALSE;
+    BOOL bOk = aaApi_DisplayDocumentCheckInActionDlg2(
         hWndParent,
-        _T("上传 - 检入确认（勾选\"生成新版本\"可保存版本历史）"),
-        0,                                              // flags（保留，传0）
-        AACHECKINDLGF_DISABLE_FREE_BTN | AACHECKINDLGF_DISABLE_UPDATE_BTN,  // 只允许检入
-        &docItem, 1, &bNewVersion, szComment, 512);
+        _T("上传 - 检入确认（将自动生成新版本，版本号系统分配）"),
+        0,                                   // flags（保留，必须为0）
+        &docItem, 1,                         // 文档
+        szComment,                           // 默认版本说明
+        CheckInDlgForceNewVersionCb,         // 回调：强制新版本
+        NULL);                               // callbackParam
 
     // 清理临时工作副本
     DeleteFile(szOut);
 
-    // [实测] 检入对话框成功执行检入时返回 IDCHECK_IN(1053)，而非 IDOK；两者都视为成功
-    if (nRes != IDOK && nRes != IDCHECK_IN)
+    // 回调未触发=用户取消了检入对话框（返回码无法区分取消/成功，用回调标记判断）
+    if (!g_bCheckInFired)
     {
-        CString strFail;
-        strFail.Format(_T("检入未完成（返回码=%ld）。"), (LONG)nRes);
-        strErr = strFail;
+        strErr = _T("检入已取消。");
+        return FALSE;
+    }
+    if (!bOk)
+    {
+        strErr = _T("检入失败：") + GetLastErrorText();
         return FALSE;
     }
 
     if (pOutNewVersion)
-        *pOutNewVersion = bNewVersion;
+        *pOutNewVersion = TRUE;
     return TRUE;
 }
 

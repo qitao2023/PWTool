@@ -75,6 +75,16 @@ BOOL CDocListDlg::OnInitDialog()
 	return TRUE;
 }
 
+// 判断 cand 是否比 existing 更新：活动版本(ORIGINALNO=0)最新，其次版本串，最后 docid
+static BOOL IsDocNewer(const PWHelper::PWDocItem& cand, const PWHelper::PWDocItem& existing)
+{
+	if (cand.lOriginalNo == 0 && existing.lOriginalNo != 0) return TRUE;
+	if (existing.lOriginalNo == 0 && cand.lOriginalNo != 0) return FALSE;
+	int c = PWHelper::CompareVersionStrings(cand.strVersion, existing.strVersion);
+	if (c != 0) return (c > 0);
+	return (cand.lDocumentId > existing.lDocumentId);
+}
+
 void CDocListDlg::FillDocumentList(LONG lProjectId)
 {
 	m_list.DeleteAllItems();
@@ -85,11 +95,14 @@ void CDocListDlg::FillDocumentList(LONG lProjectId)
 	if (nCount <= 0)
 		return;
 
+	// 先收集所有文档行（含各版本）
+	CArray<PWHelper::PWDocItem, PWHelper::PWDocItem&> arrTmp;
 	for (LONG i = 0; i < nCount; i++)
 	{
 		PWHelper::PWDocItem item;
 		item.lProjectId = lProjectId;
 		item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
+		item.lOriginalNo = aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, i);
 
 		const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_NAME, i);
 		if (psz) item.strName = psz;
@@ -106,12 +119,38 @@ void CDocListDlg::FillDocumentList(LONG lProjectId)
 		// 导致后续各行的名称/版本等属性读取错位。
 		item.lAccess = PWHelper::GetDocumentAccess(lProjectId, item.lDocumentId, i);
 
+		arrTmp.Add(item);
+	}
+
+	// 按文件名去重：同一文件名只保留最新版本（活动版本优先，其次版本串，最后 docid）。
+	// [修复] 不能按 docid 判断最新：创建新版本时旧版本会被重新分配更高的 docid。
+	// 列表每行一个文件，历史版本只在"历史版本"弹窗里查看。
+	for (INT_PTR i = 0; i < arrTmp.GetSize(); i++)
+	{
+		PWHelper::PWDocItem cand = arrTmp.GetAt(i);   // 非const副本，供 CArray::Add/SetAt
+		BOOL bDupe = FALSE;
+		for (INT_PTR j = 0; j < m_arrAll.GetSize(); j++)
+		{
+			if (m_arrAll.GetAt(j).strFileName.CompareNoCase(cand.strFileName) == 0)
+			{
+				if (IsDocNewer(cand, m_arrAll.GetAt(j)))   // cand 更新则替换
+					m_arrAll.SetAt(j, cand);
+				bDupe = TRUE;
+				break;
+			}
+		}
+		if (!bDupe)
+			m_arrAll.Add(cand);
+	}
+
+	// 填充列表
+	for (INT_PTR i = 0; i < m_arrAll.GetSize(); i++)
+	{
+		const PWHelper::PWDocItem& item = m_arrAll.GetAt(i);
 		int nRow = m_list.InsertItem(m_list.GetItemCount(), item.strName);
 		m_list.SetItemText(nRow, 1, item.strVersion);
 		m_list.SetItemText(nRow, 2, item.strUpdateTime);
 		m_list.SetItemText(nRow, 3, (item.lAccess & AADMS_ACCESS_WRITE) ? _T("读写") : _T("只读"));
-
-		m_arrAll.Add(item);
 	}
 }
 

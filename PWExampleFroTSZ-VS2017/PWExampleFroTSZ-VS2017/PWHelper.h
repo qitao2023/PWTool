@@ -36,9 +36,10 @@ namespace PWHelper
         CString strUpdateTime;
         LONG    lAccess;          // AADMS_ACCESS_*
         LONG    lChosenDocId;     // 用户经"历史版本"列选定的版本docid；0=未选(打开/链接时用最新)
+        LONG    lOriginalNo;      // DOC_PROP_ORIGINALNO：活动版本=0，历史版本=活动版本docid
 
         PWDocItem()
-            : lProjectId(0), lDocumentId(0), lAccess(0), lChosenDocId(0)
+            : lProjectId(0), lDocumentId(0), lAccess(0), lChosenDocId(0), lOriginalNo(0)
         {
         }
     };
@@ -51,9 +52,10 @@ namespace PWHelper
         CString strVersion;       // 版本串
         CString strUpdateTime;    // 文件更新时间 FILE_UPDATE_TIME
         LONG    lSize;            // 文件大小（字节）DOC_PROP_SIZE
+        LONG    lOriginalNo;      // DOC_PROP_ORIGINALNO：活动版本=0，历史版本=活动版本docid
 
         PWDocVersionItem()
-            : lDocumentId(0), lVersionNo(0), lSize(0)
+            : lDocumentId(0), lVersionNo(0), lSize(0), lOriginalNo(0)
         {
         }
     };
@@ -94,6 +96,8 @@ namespace PWHelper
     // 枚举文档的所有版本（按版本号从新到旧排序），返回版本数量；失败返回<=0。
     LONG    EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
                                  CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
+    // 比较版本串（A<B<...<Z<AA）：返回 a>b ? 1 : (a<b ? -1 : 0)
+    int     CompareVersionStrings(LPCTSTR a, LPCTSTR b);
     // 按文件名列出项目内所有同名文档（每个同名文档视为一个"版本"）。
     // [数据源] 版本集枚举 API(SelectDocumentDataBufferVersions) 在本数据源只返回活动版本，
     // 但 SelectDocumentsByProjectId 能返回全部同名文档——用后者枚举版本。

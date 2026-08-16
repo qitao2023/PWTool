@@ -355,9 +355,8 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLinkMgr()
 }
 
 
-// 上传：按PW地址来源上传当前模型
-// [修复] 首次上传：本地新建的模型在PW中还不存在，无法先通过"打开PW"下载，
-// 此时允许直接浏览选择本地模型文件（有PW地址来源→更新版本，无→作为新文档创建）。
+// 上传：有PW地址来源→直接检出并弹PW检入框生成新版本；无地址→选目标目录创建新文档。
+// [简化] 不再弹工具自己的上传框，版本说明在PW检入框里填。
 void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 {
 	CString strModel = m_strCurrentModelPath;
@@ -372,6 +371,65 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 		strModel = dlg.GetPathName();
 	}
 
-	CDlgUpload dlg(strModel, this);
-	dlg.DoModal();
+	if (!PWHelper::EnsureLogin(this))
+		return;
+
+	CString strFolder = PWHelper::GetFileFolder(strModel);
+	CString strFileName = PWHelper::GetFileName(strModel);
+
+	PWHelper::PWAddrInfo addr;
+	BOOL bHasAddr = PWHelper::LoadPwAddr(strFolder, strModel, addr);
+
+	if (bHasAddr && addr.lDocumentId > 0)
+	{
+		// 更新已有文档版本：直接检出 + 弹PW检入框（跳过工具上传框），版本说明在检入框里填
+		CString strErr;
+		BOOL bNewVer = FALSE;
+		if (!PWHelper::UploadNewVersion(this->GetSafeHwnd(),
+			addr.lProjectId, addr.lDocumentId,
+			strModel, strFolder, _T(""), strErr, &bNewVer))
+		{
+			AfxMessageBox(_T("上传失败：") + strErr);
+			return;
+		}
+
+		// 更新 INI：记录最新版本 docid 与时间
+		LONG lNewDocId = PWHelper::GetLatestDocumentId(addr.lProjectId, addr.lDocumentId);
+		if (lNewDocId > 0)
+			addr.lDocumentId = lNewDocId;
+		addr.strVersionDate = PWHelper::GetVersionDate(addr.lProjectId, addr.lDocumentId);
+		PWHelper::SavePwAddr(strFolder, strFileName, addr);
+
+		AfxMessageBox(bNewVer ? _T("上传成功，已生成新版本。") : _T("上传成功。"));
+	}
+	else
+	{
+		// 首次上传：选目标目录后创建新文档
+		LONG nPrjID = aaApi_SelectProjectDlg(this->m_hWnd, _T("请选择上传目标目录"), 0);
+		if (nPrjID <= 0)
+			return;
+
+		LONG lDocId = 0;
+		CString strErr;
+		if (!PWHelper::CreateNewDocument(nPrjID, strModel, _T(""), lDocId, strErr))
+		{
+			AfxMessageBox(_T("上传失败：") + strErr);
+			return;
+		}
+
+		// 记录 PW 地址来源
+		PWHelper::PWAddrInfo info;
+		info.strDatasource = PWHelper::GetDatasourceName();
+		info.lProjectId = nPrjID;
+		info.lDocumentId = lDocId;
+		aaApi_SelectProject(nPrjID);
+		LPCWSTR psz = aaApi_GetProjectStringProperty(PROJ_PROP_NAME, 0);
+		if (psz != NULL)
+			info.strProjectName = psz;
+		info.strVersionDate = PWHelper::GetLatestVersionDate(nPrjID, lDocId);
+		info.bLink = FALSE;
+		PWHelper::SavePwAddr(strFolder, strFileName, info);
+
+		AfxMessageBox(_T("上传成功，已作为新文档保存PW地址来源。"));
+	}
 }
