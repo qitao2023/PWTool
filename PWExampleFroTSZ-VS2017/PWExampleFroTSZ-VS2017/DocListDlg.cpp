@@ -54,7 +54,7 @@ BOOL CDocListDlg::OnInitDialog()
 	m_list.InsertColumn(1, _T("版本"), LVCFMT_LEFT, 60);
 	m_list.InsertColumn(2, _T("更新时间"), LVCFMT_LEFT, 120);
 	m_list.InsertColumn(3, _T("权限"), LVCFMT_LEFT, 60);
-	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 70);
+	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 105);
 
 	if (m_mode == MODE_OPEN)
 	{
@@ -67,9 +67,13 @@ BOOL CDocListDlg::OnInitDialog()
 		SetDlgItemText(IDOK, _T("链接"));
 	}
 
-	// 默认本地路径
+	// 默认本地路径：优先取上次使用过的路径（打开/链接分开记忆），无记录时用默认 model / LinkModel
 	if (m_strLocalPath.IsEmpty())
-		m_strLocalPath = (m_mode == MODE_OPEN) ? PWHelper::GetModelDir() : PWHelper::GetLinkModelDir();
+	{
+		m_strLocalPath = PWHelper::GetLastLocalPath(m_mode == MODE_LINK);
+		if (m_strLocalPath.IsEmpty())
+			m_strLocalPath = (m_mode == MODE_OPEN) ? PWHelper::GetModelDir() : PWHelper::GetLinkModelDir();
+	}
 	UpdateData(FALSE);
 
 	return TRUE;
@@ -133,14 +137,22 @@ void CDocListDlg::FillDocumentList(LONG lProjectId)
 		{
 			if (m_arrAll.GetAt(j).strFileName.CompareNoCase(cand.strFileName) == 0)
 			{
-				if (IsDocNewer(cand, m_arrAll.GetAt(j)))   // cand 更新则替换
+				PWHelper::PWDocItem& existing = m_arrAll.GetAt(j);
+				existing.lVersionCount++;   // 同名(版本)计数 +1
+				if (IsDocNewer(cand, existing))   // cand 更新则替换，但保留累计的版本数
+				{
+					cand.lVersionCount = existing.lVersionCount;
 					m_arrAll.SetAt(j, cand);
+				}
 				bDupe = TRUE;
 				break;
 			}
 		}
 		if (!bDupe)
+		{
+			cand.lVersionCount = 1;
 			m_arrAll.Add(cand);
+		}
 	}
 
 	// 填充列表
@@ -151,6 +163,10 @@ void CDocListDlg::FillDocumentList(LONG lProjectId)
 		m_list.SetItemText(nRow, 1, item.strVersion);
 		m_list.SetItemText(nRow, 2, item.strUpdateTime);
 		m_list.SetItemText(nRow, 3, (item.lAccess & AADMS_ACCESS_WRITE) ? _T("读写") : _T("只读"));
+		// 历史版本列显示版本数量并带省略号，提示可点开查看更多版本
+		CString strCnt;
+		strCnt.Format(_T("%d个版本..."), item.lVersionCount);
+		m_list.SetItemText(nRow, COL_HISTVER, strCnt);
 	}
 }
 
@@ -193,6 +209,8 @@ void CDocListDlg::OnBnClickedBrowseLocalpath()
 		{
 			m_strLocalPath = szPath;
 			UpdateData(FALSE);
+			// 记住本次选择，下次打开对话框直接带出
+			PWHelper::SetLastLocalPath(m_strLocalPath, m_mode == MODE_LINK);
 		}
 		CoTaskMemFree(pidl);
 	}
@@ -232,6 +250,9 @@ void CDocListDlg::OnOK()
 		AfxMessageBox(_T("请填写本地下载路径。"));
 		return;
 	}
+
+	// 记住本次使用的本地路径，下次打开自动带出
+	PWHelper::SetLastLocalPath(m_strLocalPath, m_mode == MODE_LINK);
 
 	CDialogEx::OnOK();
 }
@@ -292,7 +313,7 @@ void CDocListDlg::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
 	if (dlg.DoModal() != IDOK)
 		return;
 
-	// 记录选定版本；外层表格该行显示所选版本，"打开/链接"时按此版本下载
+	// 记录选定版本；外层表格"版本"列只显示版本号（A/B），"历史版本"列保持"N个版本..."原状不改。
 	item.lChosenDocId = dlg.m_sel.lDocumentId;
 	item.strVersion = dlg.m_sel.strVersion;
 	item.strUpdateTime = dlg.m_sel.strUpdateTime;
@@ -300,6 +321,5 @@ void CDocListDlg::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
 	CString strVer = dlg.m_sel.strVersion;
 	if (strVer.IsEmpty())
 		strVer = _T("?");
-	m_list.SetItemText(pNMIA->iItem, 1, strVer + _T(" (所选)"));
-	m_list.SetItemText(pNMIA->iItem, COL_HISTVER, strVer);
+	m_list.SetItemText(pNMIA->iItem, 1, strVer);
 }

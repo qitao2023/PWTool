@@ -240,6 +240,7 @@ BOOL SavePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, const PWAddrInfo& info)
     WritePrivateProfileStringW(strSec, _T("projectName"), info.strProjectName, strIni);
     strTmp.Format(_T("%ld"), info.lDocumentId);
     WritePrivateProfileStringW(strSec, _T("docID"), strTmp, strIni);
+    WritePrivateProfileStringW(strSec, _T("version"), info.strVersion, strIni);      // 版本号（A/B/C）
     WritePrivateProfileStringW(strSec, _T("versionDate"), info.strVersionDate, strIni);
     WritePrivateProfileStringW(strSec, _T("comment"), info.strComment, strIni);
     strTmp.Format(_T("%d"), info.bLink ? 1 : 0);
@@ -271,6 +272,8 @@ BOOL LoadPwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, PWAddrInfo& info)
     info.strProjectName = szBuf;
     GetPrivateProfileStringW(strSec, _T("docID"), _T("0"), szBuf, 512, strIni);
     info.lDocumentId = _tstol(szBuf);
+    GetPrivateProfileStringW(strSec, _T("version"), _T(""), szBuf, 512, strIni);
+    info.strVersion = szBuf;
     GetPrivateProfileStringW(strSec, _T("versionDate"), _T(""), szBuf, 512, strIni);
     info.strVersionDate = szBuf;
     GetPrivateProfileStringW(strSec, _T("comment"), _T(""), szBuf, 512, strIni);
@@ -392,6 +395,48 @@ void EnumLinkFolders(CStringArray& arrFolders)
 }
 
 //--------------------------------------------------------------------------------------+
+// 最近使用参数（%APPDATA%\PWTool\Settings.ini）
+//--------------------------------------------------------------------------------------+
+
+// 应用配置目录：默认 %APPDATA%\PWTool。exe 可能部署在 Program Files 等不可写目录
+// （写 INI 会被 UAC 静默拦截/虚拟化），配置存到用户目录才保证可读可写；APPDATA 缺失时退回 exe 目录。
+static CString GetSettingsDir()
+{
+    CString strDir = GetEnvVar(_T("APPDATA"));
+    if (strDir.IsEmpty())
+        return GetAppBaseDir();
+    if (strDir[strDir.GetLength() - 1] != _T('\\'))
+        strDir += _T('\\');
+    return strDir + _T("PWTool");
+}
+
+CString GetSettingsIniPath()
+{
+    return GetSettingsDir() + _T("\\Settings.ini");
+}
+
+CString GetLastLocalPath(BOOL bLinkMode)
+{
+    CString strIni = GetSettingsIniPath();
+    TCHAR szBuf[MAX_PATH * 2] = { 0 };
+    GetPrivateProfileStringW(_T("Recent"),
+                             bLinkMode ? _T("LinkLocalPath") : _T("OpenLocalPath"),
+                             _T(""), szBuf, MAX_PATH * 2, strIni);
+    return CString(szBuf);
+}
+
+void SetLastLocalPath(LPCTSTR pszPath, BOOL bLinkMode)
+{
+    if (pszPath == NULL || pszPath[0] == _T('\0'))
+        return;
+    CString strIni = GetSettingsIniPath();
+    CreateDirRecursive(GetSettingsDir());   // 确保配置目录存在（WritePrivateProfileString 不建目录）
+    WritePrivateProfileStringW(_T("Recent"),
+                               bLinkMode ? _T("LinkLocalPath") : _T("OpenLocalPath"),
+                               pszPath, strIni);
+}
+
+//--------------------------------------------------------------------------------------+
 // PW 操作
 //--------------------------------------------------------------------------------------+
 
@@ -409,19 +454,250 @@ LONG GetLatestDocumentId(LONG lProjectId, LONG lDocumentId)
     return (lOriginalNo > 0) ? lOriginalNo : lDocumentId;
 }
 
-BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir, CString& strOutFile)
+// 递归删除目录（含只读文件/子目录）
+static void RemoveDirRecursive(LPCTSTR pszDir)
+{
+    if (pszDir == NULL || pszDir[0] == _T('\0'))
+        return;
+
+    WIN32_FIND_DATAW fd;
+    CString strPattern = CString(pszDir) + _T("\\*");
+    HANDLE hFind = FindFirstFileW(strPattern, &fd);
+    if (hFind != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0)
+                continue;
+            CString strFull = CString(pszDir) + _T("\\") + fd.cFileName;
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+            {
+                SetFileAttributes(strFull, FILE_ATTRIBUTE_NORMAL);
+                RemoveDirRecursive(strFull);
+            }
+            else
+            {
+                SetFileAttributes(strFull, FILE_ATTRIBUTE_NORMAL);
+                DeleteFileW(strFull);
+            }
+        } while (FindNextFileW(hFind, &fd));
+        FindClose(hFind);
+    }
+    SetFileAttributes(pszDir, FILE_ATTRIBUTE_NORMAL);
+    RemoveDirectoryW(pszDir);
+}
+
+// 把 pszSrcDir 下所有文件（含子目录）移动到 pszDstDir，保留相对结构，已存在则覆盖。
+// 单个文件移动失败跳过不中断；返回成功移动的文件数。
+static int MoveDirContents(LPCTSTR pszSrcDir, LPCTSTR pszDstDir)
+{
+    int nMoved = 0;
+    if (pszSrcDir == NULL || pszSrcDir[0] == _T('\0'))
+        return 0;
+
+    WIN32_FIND_DATAW fd;
+    CString strPattern = CString(pszSrcDir) + _T("\\*");
+    HANDLE hFind = FindFirstFileW(strPattern, &fd);
+    if (hFind == INVALID_HANDLE_VALUE)
+        return 0;
+    do
+    {
+        if (wcscmp(fd.cFileName, L".") == 0 || wcscmp(fd.cFileName, L"..") == 0)
+            continue;
+        CString strSrcFull = CString(pszSrcDir) + _T("\\") + fd.cFileName;
+        CString strDstFull = CString(pszDstDir) + _T("\\") + fd.cFileName;
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            CreateDirRecursive(strDstFull);
+            nMoved += MoveDirContents(strSrcFull, strDstFull);
+            RemoveDirectoryW(strSrcFull);
+        }
+        else
+        {
+            SetFileAttributes(strDstFull, FILE_ATTRIBUTE_NORMAL);   // 清只读以便覆盖
+            if (MoveFileEx(strSrcFull, strDstFull, MOVEFILE_REPLACE_EXISTING))
+                nMoved++;
+            else if (CopyFile(strSrcFull, strDstFull, FALSE))
+            {
+                DeleteFile(strSrcFull);
+                nMoved++;
+            }
+        }
+    } while (FindNextFileW(hFind, &fd));
+    FindClose(hFind);
+    return nMoved;
+}
+
+// 调试日志：追加写入 exe 目录\pw_link.log（与链接流程日志同文件），便于排查下载失败。
+static void LogPwDebug(LPCTSTR pszLine)
+{
+    CString strDir = GetAppBaseDir();
+    CreateDirRecursive(strDir);
+    CString strPath = strDir + _T("\\pw_link.log");
+
+    FILE* f = NULL;
+    if (_wfopen_s(&f, strPath, L"a, ccs=UTF-8") == 0 && f != NULL)
+    {
+        CTime t = CTime::GetCurrentTime();
+        CString strHead = t.Format(_T("%Y-%m-%d %H:%M:%S"));
+        fwprintf(f, L"[%s] [下载] %s\n", (LPCTSTR)strHead, pszLine);
+        fclose(f);
+    }
+}
+
+// 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
+// [修复] 目标目录已存在同名文件时 aaApi_CopyOutDocument 会失败（错误
+// AAERR_DMSFH_ERROR_FILE_ALREADY_EXISTS）或生成带序号的新文件，导致"重新链接/覆盖下载"
+// 被误判为失败、本地文件不被真正更新、INI 也不写入。现改为先下载到工作目录下的临时子目录
+// （目录内无同名文件，CopyOut 稳定成功并写回原始文件名），再把全部文件移动/覆盖到工作目录，
+// 返回最终落盘路径。成功返回 TRUE，strOutFile 为最终路径；失败返回 FALSE，pstrErr 非空时给出原因。
+BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
+                      CString& strOutFile, CString* pstrErr)
 {
     strOutFile.Empty();
+    if (pstrErr != NULL)
+        pstrErr->Empty();
     if (lDocumentId <= 0)
         return FALSE;
     if (pszWorkDir == NULL || !CreateDirRecursive(pszWorkDir))
         return FALSE;
 
+    // 清理上次异常残留的 __pwdl_* 临时目录
+    {
+        WIN32_FIND_DATAW fd;
+        CString strPattern = CString(pszWorkDir) + _T("\\__pwdl_*");
+        HANDLE hFind = FindFirstFileW(strPattern, &fd);
+        if (hFind != INVALID_HANDLE_VALUE)
+        {
+            do
+            {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                    RemoveDirRecursive(CString(pszWorkDir) + _T("\\") + fd.cFileName);
+            } while (FindNextFileW(hFind, &fd));
+            FindClose(hFind);
+        }
+    }
+
+    // 用唯一的临时子目录下载（__pwdl_<docid>_<序号>）：目录内无同名文件，保证 CopyOut 稳定成功。
+    // [修复] 不能用固定目录名：同一文档先拷出活动版本后，再拷出其他版本到同一目录会触发
+    // AAERR_DMS_ERR_CO_LOCATION_IS_USED(58218，"拷出位置已被占用")——同一个本地目录内每个
+    // 版本只能拷出一次。每次用新目录即可绕开（打开/链接到不同目录时本就不会冲突）。
+    static LONG s_nPwTmpSeq = 0;
+    CString strTmpDir;
+    strTmpDir.Format(_T("%s\\__pwdl_%ld_%ld"), pszWorkDir, lDocumentId, ++s_nPwTmpSeq);
+    if (!CreateDirRecursive(strTmpDir))
+        return FALSE;
+
     TCHAR szOut[MAX_PATH * 2] = { 0 };
-    BOOL bOk = aaApi_CopyOutDocument(lProjectId, lDocumentId, pszWorkDir, szOut, MAX_PATH * 2);
-    if (bOk)
-        strOutFile = szOut;
-    return bOk;
+    BOOL bOk = FALSE;
+
+    // 判断该 docid 是否为活动(当前)版本：活动版本 ORIGINALNO=0，历史版本 ORIGINALNO>0。
+    // 两种版本采用不同的取数方式（见下）。顺带记录版本属性用于失败诊断。
+    BOOL bIsActive = FALSE;
+    LONG lDocSize = 0;
+    if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+    {
+        bIsActive = (aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, 0) == 0);
+        lDocSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, 0);
+    }
+
+    LONG lShowVer = -1;
+    BOOL bToggled = FALSE;
+    if (bIsActive)
+    {
+        // 当前版本：加 AADMS_DOCFETCH_IGNORE_UPTODATECOPY 强制从服务器重新下载，
+        // 避免 SDK 复用本地缓存里"判为已最新"的旧版本内容——本数据源创建新版本时会重分配
+        // docid，缓存容易把旧版本内容误当成最新版，导致"链接最新版却下到旧内容"。
+        ULONG ulFetch = AADMS_DOCFETCH_COPYOUT
+            | AADMS_DOCFETCH_IGNORE_UPTODATECOPY
+            | AADMS_DOCFETCH_MASTER_AS_SET
+            | AADMS_DOCFETCH_NESTED_REFERENCES
+            | AADMS_DOCFETCH_REDLINED_REFERENCES;
+        bOk = aaApi_FetchDocumentFromServer(ulFetch, lProjectId, lDocumentId,
+                                            strTmpDir, szOut, MAX_PATH * 2);
+    }
+    else
+    {
+        // 历史版本：SDK 在用户设置 AADMS_PAR_DIS_SHOW_VERSION=0（"只显示当前版本"）时
+        // 拒绝拷出非当前版本。临时打开该设置再恢复（仅客户端本地生效，无需管理员权限）。
+        // 取数用 CopyOutDocument（原已验证可下载历史版本的路径），不加 IGNORE_UPTODATECOPY。
+        lShowVer = aaApi_GetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION);
+        if (lShowVer == 0)
+            bToggled = aaApi_SetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION, 1);
+        bOk = aaApi_CopyOutDocument(lProjectId, lDocumentId, strTmpDir, szOut, MAX_PATH * 2);
+        if (bToggled)
+            aaApi_SetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION, lShowVer);   // 恢复原值
+    }
+
+    if (!bOk)
+    {
+        // 完整诊断：错误ID + 版本属性(活动? 服务器记录的文件大小) + 设置切换情况，便于定位
+        CString strDbg;
+        strDbg.Format(_T("下载失败: 项目=%ld docid=%ld 活动=%d 服务器大小=%ld showVer=%ld 切换=%d errId=%ld err=%s"),
+            lProjectId, lDocumentId, (int)bIsActive, lDocSize, lShowVer, (int)bToggled,
+            aaApi_GetLastErrorId(), (LPCTSTR)GetLastErrorText());
+        LogPwDebug(strDbg);
+        if (pstrErr != NULL)
+            *pstrErr = GetLastErrorText();
+        RemoveDirRecursive(strTmpDir);
+        return FALSE;
+    }
+
+    CString strDl(szOut);   // 下载写出的文件（含完整路径）
+    if (strDl.IsEmpty())
+    {
+        // 未回填文件名时，按文档 FILENAME 属性拼出临时文件路径
+        if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+        {
+            const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, 0);
+            if (psz != NULL)
+                strDl = strTmpDir + _T("\\") + psz;
+        }
+    }
+    if (strDl.IsEmpty() || GetFileAttributes(strDl) == INVALID_FILE_ATTRIBUTES)
+    {
+        if (pstrErr != NULL)
+            *pstrErr = _T("下载后未找到输出文件。");
+        RemoveDirRecursive(strTmpDir);
+        return FALSE;
+    }
+
+    // 主文件最终路径 = 工作目录 + 下载文件名（与直接落盘时的名字一致）
+    CString strMain = CString(pszWorkDir) + _T("\\") + GetFileName(strDl);
+
+    // 把临时目录里所有文件（含引用的参照文件）移动/覆盖到工作目录
+    MoveDirContents(strTmpDir, pszWorkDir);
+
+    // [修复] 判断"主文件是否真的被替换"：须同时满足 临时主文件已移走 && 目标文件已存在。
+    // 原仅判断目标文件存在：若移动失败（目标被 CAD 占用）旧文件仍在，会误判为成功。
+    if (GetFileAttributes(strDl) != INVALID_FILE_ATTRIBUTES
+        || GetFileAttributes(strMain) == INVALID_FILE_ATTRIBUTES)
+    {
+        if (pstrErr != NULL)
+            *pstrErr = _T("无法用最新版本覆盖本地文件，文件可能正被 CAD 等程序打开，请先关闭该文件后重试。");
+        // 临时目录保留下载结果，避免新版本丢失；下次下载会自动清理。
+        return FALSE;
+    }
+
+    RemoveDirRecursive(strTmpDir);
+    strOutFile = strMain;
+
+    // 成功日志：记录版本属性，便于核对下到的是哪个版本
+    {
+        CFileStatus fs;
+        ULONGLONG nSize = 0;
+        if (CFile::GetStatus(strMain, fs))
+            nSize = fs.m_size;
+        const WCHAR* pszVer = NULL;
+        if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+            pszVer = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, 0);
+        CString strDbg;
+        strDbg.Format(_T("下载成功: docid=%ld 活动=%d showVer=%ld 版本=%s 大小=%I64u"),
+            lDocumentId, (int)bIsActive, lShowVer,
+            (pszVer != NULL) ? pszVer : _T("?"), nSize);
+        LogPwDebug(strDbg);
+    }
+    return TRUE;
 }
 
 LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
@@ -611,13 +887,13 @@ BOOL DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile
         return FALSE;
     }
 
-    // 下载落到目标文件（链接模型）所在目录，CopyOut 实际写出的路径回传出来便于诊断。
-    // 目标目录已有同名文件时 CopyOut 可能生成带序号的新文件（如 xxx_1.dgn），
-    // 因此下载后把实际输出文件覆盖/移动到链接文件上，确保本地文件被真正更新。
+    // 下载落到目标文件（链接模型）所在目录。DownloadDocument 现会下载到临时子目录再
+    // 覆盖到目标目录，因此 strOut 通常已等于 pszTargetFile；下面的同名移动仅作为兜底。
     CString strOut;
-    if (!DownloadDocument(lProjectId, lDocumentId, strFolder, strOut))
+    CString strDlErr;
+    if (!DownloadDocument(lProjectId, lDocumentId, strFolder, strOut, &strDlErr))
     {
-        strErr = GetLastErrorText();
+        strErr = strDlErr.IsEmpty() ? GetLastErrorText() : strDlErr;
         return FALSE;
     }
     if (pstrOutFile != NULL)
@@ -652,6 +928,17 @@ CString GetVersionDate(LONG lProjectId, LONG lDocumentId)
         return _T("");
     // [修复] 用 FILE_UPDATE_TIME(文件内容最后更新时间) 作为版本时间
     const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, 0);
+    return (psz != NULL) ? CString(psz) : CString(_T(""));
+}
+
+CString GetVersion(LONG lProjectId, LONG lDocumentId)
+{
+    if (lDocumentId <= 0)
+        return _T("");
+    LONG nRes = aaApi_SelectDocument(lProjectId, lDocumentId);
+    if (nRes != 1)
+        return _T("");
+    const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, 0);
     return (psz != NULL) ? CString(psz) : CString(_T(""));
 }
 

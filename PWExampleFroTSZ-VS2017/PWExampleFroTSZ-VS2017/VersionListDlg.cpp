@@ -68,19 +68,21 @@ BOOL CDlgVersionList::OnInitDialog()
 	strTitle.Format(_T("选择版本（共 %d 个）"), (int)m_arrVersions.GetSize());
 	SetWindowText(strTitle);
 
+	// 本对话框只负责"选择"版本，不在对话框内下载：底部提示与确认按钮改说"选择"
+	SetDlgItemText(IDOK, _T("选择"));
+	SetDlgItemText(IDC_STATIC_VINFO, _T("请选择版本（默认最新，可回退到历史版本）"));
+
 	for (INT_PTR i = 0; i < m_arrVersions.GetSize(); i++)
 	{
 		const PWHelper::PWDocVersionItem& v = m_arrVersions.GetAt(i);
 
-		// 版本串后附加标记：最新 / 当前（与本地 INI versionDate 一致）
+		// 只标"(最新)"（列表第一行即最新）；不再显示"(当前)"——
+		// 本数据源按 FILE_UPDATE_TIME 匹配版本易错位，标记会标到错误的行上。
 		CString strVer = v.strVersion;
 		if (i == 0)
 			strVer += _T(" (最新)");
 		if (!m_strCurVersionDate.IsEmpty() && v.strUpdateTime == m_strCurVersionDate)
-		{
-			strVer += _T(" (当前)");
-			nCurRow = (int)i;
-		}
+			nCurRow = (int)i;   // 仍用于默认选中当前版本，但不再显示标记
 
 		CString strNo;
 		strNo.Format(_T("%ld"), v.lVersionNo);

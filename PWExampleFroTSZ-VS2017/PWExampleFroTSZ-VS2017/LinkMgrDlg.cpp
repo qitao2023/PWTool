@@ -39,8 +39,13 @@ static void LogUpdate(LPCTSTR pszLine)
 	}
 }
 
-// "历史版本"列索引：点击该列弹出版本选择
-static const int COL_HISTVER = 5;
+// 列表列索引（"历史版本"列点击弹出版本选择）
+static const int COL_CUR_VER  = 1;   // 当前版本号（A/B）
+static const int COL_CUR_DATE = 2;   // 当前版本时间
+static const int COL_NEW_VER  = 3;   // 最新版本号（A/B）
+static const int COL_NEW_DATE = 4;   // 最新版本时间
+static const int COL_STATUS   = 5;   // 状态
+static const int COL_HISTVER  = 6;   // 历史版本
 
 BEGIN_MESSAGE_MAP(CDlgLinkMgr, CDialogEx)
 	ON_BN_CLICKED(IDC_BTN_ADD, &CDlgLinkMgr::OnBnClickedAdd)
@@ -73,17 +78,37 @@ BOOL CDlgLinkMgr::OnInitDialog()
 
 	m_list.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 	m_list.InsertColumn(0, _T("文件名"), LVCFMT_LEFT, 170);
-	m_list.InsertColumn(1, _T("当前版本"), LVCFMT_LEFT, 90);
-	m_list.InsertColumn(2, _T("最新版本"), LVCFMT_LEFT, 110);
-	m_list.InsertColumn(3, _T("状态"), LVCFMT_LEFT, 60);
-	m_list.InsertColumn(4, _T("PW来源"), LVCFMT_LEFT, 60);
-	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 70);
+	m_list.InsertColumn(COL_CUR_VER, _T("当前版本"), LVCFMT_LEFT, 60);
+	m_list.InsertColumn(COL_CUR_DATE, _T("当前版本时间"), LVCFMT_LEFT, 140);
+	m_list.InsertColumn(COL_NEW_VER, _T("最新/所选版本"), LVCFMT_LEFT, 90);
+	m_list.InsertColumn(COL_NEW_DATE, _T("最新/所选版本时间"), LVCFMT_LEFT, 140);
+	m_list.InsertColumn(COL_STATUS, _T("状态"), LVCFMT_LEFT, 60);
+	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 105);
 
-	ReloadList();
-	if (PWHelper::IsLoggedIn())
-		DetectLatestVersions();
-	else
-		SetStatusText(_T("未登录PW系统，最新版本未检测。"));
+	// 暂时去掉"添加/删除"按钮：隐藏并左移压缩剩余按钮（需要时可改回来）。
+	// 注意 MoveWindow 用像素、对话框模板用对话框单位(DLU)，先 MapDialogRect 换算再移动。
+	if (CWnd* pWnd = GetDlgItem(IDC_BTN_ADD))
+		pWnd->ShowWindow(SW_HIDE);
+	if (CWnd* pWnd = GetDlgItem(IDC_BTN_DEL))
+		pWnd->ShowWindow(SW_HIDE);
+	{
+		CRect rcLink(10, 205, 70, 219);      // 链接：x=10,y=205,w=60,h=14 (DLU)
+		MapDialogRect(&rcLink);
+		if (CWnd* pWnd = GetDlgItem(IDC_BTN_LINK))
+			pWnd->MoveWindow(rcLink);
+
+		CRect rcUnlink(75, 205, 135, 219);   // 卸载
+		MapDialogRect(&rcUnlink);
+		if (CWnd* pWnd = GetDlgItem(IDC_BTN_UNLINK))
+			pWnd->MoveWindow(rcUnlink);
+
+		CRect rcUpdate(140, 205, 200, 219);  // 更新
+		MapDialogRect(&rcUpdate);
+		if (CWnd* pWnd = GetDlgItem(IDC_BTN_UPDATE))
+			pWnd->MoveWindow(rcUpdate);
+	}
+
+	ReloadList();   // 内部会检测最新版本
 
 	return TRUE;
 }
@@ -155,15 +180,27 @@ void CDlgLinkMgr::ReloadList()
 	{
 		LinkItem& it = m_arrItems[i];
 		int nRow = m_list.InsertItem(m_list.GetItemCount(), it.strFileName);
-		// 当前版本优先取 INI 记录的 PW 版本时间（本地文件修改时间不反映它对应服务器的哪个版本，
-		// 本地另存/复制后 mtime 会变但"同步自哪个版本"不变）；无 PW 地址或 INI 无记录时退回文件修改时间。
-		CString strCur = (it.bHasAddr && !it.addr.strVersionDate.IsEmpty())
+		// 当前版本：版本号取 INI 记录的 PW 版本串(A/B)，时间取 INI 版本时间（本地文件修改时间
+		// 不反映它对应服务器的哪个版本）；无 PW 地址或 INI 无记录时版本号"—"、时间退回文件修改时间。
+		CString strCurVer = (it.bHasAddr && !it.addr.strVersion.IsEmpty())
+			? it.addr.strVersion : _T("—");
+		CString strCurDate = (it.bHasAddr && !it.addr.strVersionDate.IsEmpty())
 			? it.addr.strVersionDate : GetLocalVersion(it.strLocalPath);
-		m_list.SetItemText(nRow, 1, strCur);
-		m_list.SetItemText(nRow, 2, _T("未检测"));
-		m_list.SetItemText(nRow, 3, it.bLink ? _T("已链接") : _T("未链接"));
-		m_list.SetItemText(nRow, 4, it.bHasAddr ? _T("PW") : _T("本地"));
+		m_list.SetItemText(nRow, COL_CUR_VER, strCurVer);
+		m_list.SetItemText(nRow, COL_CUR_DATE, strCurDate);
+		m_list.SetItemText(nRow, COL_NEW_VER, _T("未检测"));
+		m_list.SetItemText(nRow, COL_NEW_DATE, _T("未检测"));
+		m_list.SetItemText(nRow, COL_STATUS, it.bLink ? _T("已链接") : _T("未链接"));
+		// 历史版本列先置"—"，登录检测时对有 PW 地址的行填版本数，避免空单元格被误认为没有历史版本
+		m_list.SetItemText(nRow, COL_HISTVER, _T("—"));
 	}
+
+	// 重建列表后刷新"最新/所选版本"列（链接/卸载/添加/删除后都会重新检测最新），
+	// 否则最新版本信息会一直停在"未检测"。
+	if (PWHelper::IsLoggedIn())
+		DetectLatestVersions();
+	else
+		SetStatusText(_T("未登录PW系统，最新版本未检测。"));
 }
 
 void CDlgLinkMgr::DetectLatestVersions()
@@ -179,9 +216,35 @@ void CDlgLinkMgr::DetectLatestVersions()
 	{
 		LinkItem& it = m_arrItems[i];
 		CString strDate;
+		CString strVer;
+		LONG lVerCnt = 0;
 		if (it.bHasAddr && it.addr.lDocumentId > 0)
+		{
 			strDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, it.addr.lDocumentId);
-		m_list.SetItemText((int)i, 2, strDate.IsEmpty() ? _T("未检测") : strDate);
+			strVer = PWHelper::GetLatestVersion(it.addr.lProjectId, it.addr.lDocumentId);
+			// 版本数用"按文件名枚举"统计（本数据源版本集API只返回活动版本），与历史版本弹窗口径一致
+			CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
+			if (PWHelper::EnumSameNameDocuments(it.addr.lProjectId, it.addr.lDocumentId, arrVersions) > 0)
+				lVerCnt = (LONG)arrVersions.GetSize();
+		}
+		// "最新/所选版本"列：默认显示最新；用户已在"历史版本"列选定过非最新版本则保留其选择
+		if (it.lChosenDocId > 0)
+		{
+			m_list.SetItemText((int)i, COL_NEW_VER,
+				it.strChosenVer.IsEmpty() ? _T("?") : it.strChosenVer);
+			m_list.SetItemText((int)i, COL_NEW_DATE,
+				it.strChosenDate.IsEmpty() ? _T("—") : it.strChosenDate);
+		}
+		else
+		{
+			m_list.SetItemText((int)i, COL_NEW_VER, strVer.IsEmpty() ? _T("未检测") : strVer);
+			m_list.SetItemText((int)i, COL_NEW_DATE, strDate.IsEmpty() ? _T("未检测") : strDate);
+		}
+		// 历史版本列显示版本数量并带省略号，提示可点开查看更多版本
+		CString strCnt = _T("—");
+		if (lVerCnt > 0)
+			strCnt.Format(_T("%d个版本..."), lVerCnt);
+		m_list.SetItemText((int)i, COL_HISTVER, strCnt);
 		if (!strDate.IsEmpty())
 			nUpdated++;
 	}
@@ -318,9 +381,12 @@ void CDlgLinkMgr::OnBnClickedLink()
 			return;
 		}
 
-		CString strNewDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, lDocId);
+		CString strNewDate = PWHelper::GetVersionDate(it.addr.lProjectId, lDocId);
+		CString strNewVer = PWHelper::GetVersion(it.addr.lProjectId, lDocId);
 		it.addr.bLink = TRUE;
 		it.addr.lDocumentId = lDocId;
+		if (!strNewVer.IsEmpty())
+			it.addr.strVersion = strNewVer;
 		if (!strNewDate.IsEmpty())
 			it.addr.strVersionDate = strNewDate;
 		PWHelper::SavePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, it.addr);
@@ -375,31 +441,18 @@ void CDlgLinkMgr::OnBnClickedUpdate()
 	if (!PWHelper::EnsureLogin(this))
 		return;
 
+	// 更新目标 = 用户经"历史版本"列选定的版本（若有），否则最新版本。
 	// 解析当前最新版本 docid：INI 中记录的 docid 可能指向历史版本
-	LONG lDocId = PWHelper::GetLatestDocumentId(it.addr.lProjectId, it.addr.lDocumentId);
+	LONG lDocId = it.lChosenDocId;
+	if (lDocId <= 0)
+		lDocId = PWHelper::GetLatestDocumentId(it.addr.lProjectId, it.addr.lDocumentId);
 	if (lDocId <= 0)
 		lDocId = it.addr.lDocumentId;
 
-	// 弹出版本列表让用户选择要下载的版本（默认最新，可回退到历史版本）。
-	// [修复] 原仅在版本数>0时才弹窗，单版本文档会静默跳过；现改为总是弹出，失败时明确报错。
-	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> arrVersions;
-	LONG nVer = PWHelper::EnumSameNameDocuments(it.addr.lProjectId, lDocId, arrVersions);
-	if (nVer < 0)
-	{
-		AfxMessageBox(_T("获取版本列表失败：") + PWHelper::GetLastErrorText());
-		return;
-	}
-	{
-		CDlgVersionList dlg(it.addr.lProjectId, lDocId, it.addr.strVersionDate, this);
-		if (dlg.DoModal() != IDOK)
-			return;
-		lDocId = dlg.m_sel.lDocumentId;
-	}
-
+	CString strTag = (it.lChosenDocId > 0) ? _T("所选") : _T("最新");
 	CString strLog;
-	strLog.Format(_T("开始更新 文件=%s 存储docID=%ld 解析docID=%ld 版本数=%d 选择docID=%ld"),
-		(LPCTSTR)it.strFileName, it.addr.lDocumentId, lDocId,
-		(int)arrVersions.GetSize(), lDocId);
+	strLog.Format(_T("开始更新 文件=%s 存储docID=%ld 目标docID=%ld(%s)"),
+		(LPCTSTR)it.strFileName, it.addr.lDocumentId, lDocId, (LPCTSTR)strTag);
 	LogUpdate(strLog);
 
 	CString strOutFile;
@@ -412,26 +465,34 @@ void CDlgLinkMgr::OnBnClickedUpdate()
 		return;
 	}
 
-	// 当前版本 = 所选版本的更新时间；最新版本 = 服务器上的最新更新时间
+	// 更新后：当前版本 = 刚下载的版本；"最新/所选"列恢复为最新版本（默认），并清掉本次选择
 	CString strCurDate = PWHelper::GetVersionDate(it.addr.lProjectId, lDocId);
-	CString strNewDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, it.addr.lDocumentId);
-	CString strNewVer = PWHelper::GetLatestVersion(it.addr.lProjectId, it.addr.lDocumentId);
+	CString strCurVer = PWHelper::GetVersion(it.addr.lProjectId, lDocId);
 	it.addr.lDocumentId = lDocId;
+	it.addr.strVersion = strCurVer;
 	it.addr.strVersionDate = strCurDate;
 	it.addr.strLocalPath = it.strLocalPath;
 	PWHelper::SavePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, it.addr);
 
-	strLog.Format(_T("更新完成 文件=%s 目标=%s 下载路径=%s 本地文件时间=%s 服务器最新=%s 服务器版本串=%s"),
+	it.lChosenDocId = 0;
+	it.strChosenVer.Empty();
+	it.strChosenDate.Empty();
+	CString strNewDate = PWHelper::GetLatestVersionDate(it.addr.lProjectId, it.addr.lDocumentId);
+	CString strNewVer = PWHelper::GetLatestVersion(it.addr.lProjectId, it.addr.lDocumentId);
+
+	strLog.Format(_T("更新完成 文件=%s 目标=%s 下载路径=%s 版本=%s 版本时间=%s"),
 		(LPCTSTR)it.strFileName, (LPCTSTR)it.strLocalPath, (LPCTSTR)strOutFile,
-		(LPCTSTR)GetLocalVersion(it.strLocalPath), (LPCTSTR)strNewDate, (LPCTSTR)strNewVer);
+		(LPCTSTR)strCurVer, (LPCTSTR)strCurDate);
 	LogUpdate(strLog);
 
-	m_list.SetItemText(nRow, 1, strCurDate.IsEmpty() ? GetLocalVersion(it.strLocalPath) : strCurDate);
-	m_list.SetItemText(nRow, 2, strNewDate.IsEmpty() ? _T("未检测") : strNewDate);
+	m_list.SetItemText(nRow, COL_CUR_VER, strCurVer.IsEmpty() ? _T("—") : strCurVer);
+	m_list.SetItemText(nRow, COL_CUR_DATE, strCurDate.IsEmpty() ? GetLocalVersion(it.strLocalPath) : strCurDate);
+	m_list.SetItemText(nRow, COL_NEW_VER, strNewVer.IsEmpty() ? _T("未检测") : strNewVer);
+	m_list.SetItemText(nRow, COL_NEW_DATE, strNewDate.IsEmpty() ? _T("未检测") : strNewDate);
 	SetStatusText(_T("更新完成。"));
 }
 
-// 点击"历史版本"列：弹出版本列表，选定版本后下载覆盖本地链接文件并更新该行
+// 点击"历史版本"列：弹出版本列表选定版本，仅记录到"最新/所选版本"列，点"更新"才生效下载
 void CDlgLinkMgr::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
 {
 	LPNMITEMACTIVATE pNMIA = reinterpret_cast<LPNMITEMACTIVATE>(pNMHDR);
@@ -468,31 +529,21 @@ void CDlgLinkMgr::OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult)
 	CDlgVersionList dlg(it.addr.lProjectId, lDocId, it.addr.strVersionDate, this);
 	if (dlg.DoModal() != IDOK)
 		return;
-	lDocId = dlg.m_sel.lDocumentId;
 
-	// 下载所选版本覆盖本地链接文件，并更新该行"当前版本"列
-	CString strErr;
-	CString strOutFile;
-	if (!PWHelper::DownloadAndReplace(it.addr.lProjectId, lDocId, it.strLocalPath, strErr, &strOutFile))
-	{
-		LogUpdate(_T("下载/替换失败：") + strErr);
-		AfxMessageBox(_T("切换版本失败：") + strErr);
-		return;
-	}
+	// 只记录所选版本，不立即下载；点"更新"时才按此版本更新本地模型。
+	it.lChosenDocId = dlg.m_sel.lDocumentId;
+	it.strChosenVer = dlg.m_sel.strVersion;
+	it.strChosenDate = dlg.m_sel.strUpdateTime;
 
-	it.addr.lDocumentId = lDocId;
-	it.addr.strVersionDate = PWHelper::GetVersionDate(it.addr.lProjectId, lDocId);
-	it.addr.strLocalPath = it.strLocalPath;
-	PWHelper::SavePwAddr(PWHelper::GetFileFolder(it.strLocalPath), it.strFileName, it.addr);
-
-	CString strCur = it.addr.strVersionDate;
-	m_list.SetItemText(pNMIA->iItem, 1, strCur.IsEmpty() ? GetLocalVersion(it.strLocalPath) : strCur);
-	m_list.SetItemText(pNMIA->iItem, COL_HISTVER,
-		dlg.m_sel.strVersion.IsEmpty() ? _T("?") : dlg.m_sel.strVersion);
+	// 所选版本显示在"最新/所选版本"列（默认是最新，选了非最新就显示所选）
+	CString strSelVer = it.strChosenVer.IsEmpty() ? _T("?") : it.strChosenVer;
+	CString strSelDate = it.strChosenDate.IsEmpty() ? _T("—") : it.strChosenDate;
+	m_list.SetItemText(pNMIA->iItem, COL_NEW_VER, strSelVer);
+	m_list.SetItemText(pNMIA->iItem, COL_NEW_DATE, strSelDate);
 
 	CString strLog;
-	strLog.Format(_T("切换历史版本 文件=%s 版本docID=%ld 版本串=%s 下载路径=%s"),
-		(LPCTSTR)it.strFileName, lDocId, (LPCTSTR)dlg.m_sel.strVersion, (LPCTSTR)strOutFile);
+	strLog.Format(_T("选择历史版本 文件=%s 版本docID=%ld 版本串=%s（待点\"更新\"生效）"),
+		(LPCTSTR)it.strFileName, it.lChosenDocId, (LPCTSTR)it.strChosenVer);
 	LogUpdate(strLog);
-	SetStatusText(_T("已切换并下载所选版本。"));
+	SetStatusText(_T("已选择版本，点\"更新\"后生效。"));
 }

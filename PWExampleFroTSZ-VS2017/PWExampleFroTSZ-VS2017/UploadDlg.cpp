@@ -123,6 +123,7 @@ BOOL CDlgUpload::DoUpload()
 		CString strNewDate = PWHelper::GetVersionDate(m_addr.lProjectId, m_addr.lDocumentId);
 		// 回读服务器当前版本串，用于确认是否真的生成了新版本（A->B）
 		CString strNewVer = PWHelper::GetLatestVersion(m_addr.lProjectId, m_addr.lDocumentId);
+		m_addr.strVersion = strNewVer;
 		m_addr.strVersionDate = strNewDate;
 		m_addr.strComment = m_strVersionComment;
 		PWHelper::SavePwAddr(strFolder, strModelFileName, m_addr);
@@ -168,7 +169,8 @@ BOOL CDlgUpload::DoUpload()
 		LPCWSTR psz = aaApi_GetProjectStringProperty(PROJ_PROP_NAME, 0);
 		if (psz != NULL)
 			info.strProjectName = psz;
-		info.strVersionDate = PWHelper::GetLatestVersionDate(nPrjID, lDocId);
+		info.strVersion = PWHelper::GetVersion(nPrjID, lDocId);
+		info.strVersionDate = PWHelper::GetVersionDate(nPrjID, lDocId);
 		info.strComment = m_strVersionComment;
 		info.bLink = FALSE;
 		PWHelper::SavePwAddr(strFolder, strModelFileName, info);

@@ -36,8 +36,11 @@ private:
 		PWHelper::PWAddrInfo addr;          // PW 地址
 		BOOL    bHasAddr;                   // 是否有 PW 地址
 		BOOL    bLink;                      // 链接状态
+		LONG    lChosenDocId;               // 用户经"历史版本"列选定的版本docid；0=未选(默认用最新)
+		CString strChosenVer;               // 选定版本号
+		CString strChosenDate;              // 选定版本时间
 
-		LinkItem() : bHasAddr(FALSE), bLink(FALSE) {}
+		LinkItem() : bHasAddr(FALSE), bLink(FALSE), lChosenDocId(0) {}
 	};
 
 	void ReloadList();                      // 扫描各链接目录 + INI 合并构建列表

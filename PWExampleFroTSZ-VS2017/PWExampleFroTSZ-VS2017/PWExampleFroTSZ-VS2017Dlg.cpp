@@ -18,6 +18,24 @@
 #endif
 
 
+// 链接流程诊断日志：追加写入 exe 目录\pw_link.log，便于排查"链接不到最新"问题
+static void LogLink(LPCTSTR pszLine)
+{
+	CString strDir = PWHelper::GetAppBaseDir();
+	PWHelper::CreateDirRecursive(strDir);
+	CString strPath = strDir + _T("\\pw_link.log");
+
+	FILE* f = NULL;
+	if (_wfopen_s(&f, strPath, L"a, ccs=UTF-8") == 0 && f != NULL)
+	{
+		CTime t = CTime::GetCurrentTime();
+		CString strHead = t.Format(_T("%Y-%m-%d %H:%M:%S"));
+		fwprintf(f, L"[%s] %s\n", (LPCTSTR)strHead, pszLine);
+		fclose(f);
+	}
+}
+
+
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 
 class CAboutDlg : public CDialogEx
@@ -271,17 +289,19 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen()
 		lDocId = PWHelper::GetLatestDocumentId(item.lProjectId, item.lDocumentId);
 
 	CString strOutFile;
-	if (!PWHelper::DownloadDocument(item.lProjectId, lDocId, strDir, strOutFile))
+	CString strDlErr;
+	if (!PWHelper::DownloadDocument(item.lProjectId, lDocId, strDir, strOutFile, &strDlErr))
 	{
-		AfxMessageBox(_T("下载失败：") + PWHelper::GetLastErrorText());
+		AfxMessageBox(_T("下载失败：") + (strDlErr.IsEmpty() ? PWHelper::GetLastErrorText() : strDlErr));
 		return;
 	}
 
-	// 保存 PW 地址来源：记录所选版本的 docid 与更新时间，精确对应"本地文件同步自哪个版本"
+	// 保存 PW 地址来源：记录所选版本的 docid、版本号与更新时间，精确对应"本地文件同步自哪个版本"
 	PWHelper::PWAddrInfo info;
 	info.strDatasource = PWHelper::GetDatasourceName();
 	info.lProjectId = item.lProjectId;
 	info.lDocumentId = lDocId;
+	info.strVersion = PWHelper::GetVersion(item.lProjectId, lDocId);
 	info.strVersionDate = PWHelper::GetVersionDate(item.lProjectId, lDocId);
 	info.bLink = FALSE;
 	info.strLocalPath = strOutFile;   // 记录实际路径
@@ -323,6 +343,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 	}
 
 	int nOk = 0, nFail = 0;
+	CString strFailInfo;   // 汇总各文件失败原因
 	for (INT_PTR i = 0; i < dlg.m_arrSelected.GetSize(); i++)
 	{
 		const PWHelper::PWDocItem& item = dlg.m_arrSelected.GetAt(i);
@@ -334,7 +355,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 		if (GetFileAttributes(strTarget) != INVALID_FILE_ATTRIBUTES)
 		{
 			CString strAsk;
-			strAsk.Format(_T("本地已有文件\"%s\"，是否更新为最新版本？"), (LPCTSTR)strFileName);
+			strAsk.Format(_T("本地已有文件\"%s\"，是否更新为所选版本？"), (LPCTSTR)strFileName);
 			if (AfxMessageBox(strAsk, MB_YESNO | MB_ICONQUESTION) != IDYES)
 				continue;
 		}
@@ -347,17 +368,35 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 			lDocId = item.lDocumentId;
 
 		CString strOutFile;
-		if (!PWHelper::DownloadDocument(item.lProjectId, lDocId, strDir, strOutFile))
+		CString strDlErr;
+		if (!PWHelper::DownloadDocument(item.lProjectId, lDocId, strDir, strOutFile, &strDlErr))
 		{
 			nFail++;
+			CString strErr = strDlErr.IsEmpty() ? PWHelper::GetLastErrorText() : strDlErr;
+			strFailInfo += strFileName + _T("：") + strErr + _T("\n");
+			CString strLog;
+			strLog.Format(_T("链接失败: %s docid=%ld 原因=%s"), (LPCTSTR)strFileName, lDocId, (LPCTSTR)strErr);
+			LogLink(strLog);
 			continue;
+		}
+
+		// 记录下载结果（含文件大小，便于核对是否真下到最新版本）
+		{
+			CFileStatus fs;
+			ULONGLONG nSize = 0;
+			if (CFile::GetStatus(strOutFile, fs))
+				nSize = fs.m_size;
+			CString strLog;
+			strLog.Format(_T("链接成功: %s docid=%ld 大小=%I64u"), (LPCTSTR)strFileName, lDocId, nSize);
+			LogLink(strLog);
 		}
 
 		PWHelper::PWAddrInfo info;
 		info.strDatasource = PWHelper::GetDatasourceName();
 		info.lProjectId = item.lProjectId;
 		info.lDocumentId = lDocId;
-		info.strVersionDate = PWHelper::GetLatestVersionDate(item.lProjectId, lDocId);
+		info.strVersion = PWHelper::GetVersion(item.lProjectId, lDocId);
+		info.strVersionDate = PWHelper::GetVersionDate(item.lProjectId, lDocId);
 		info.bLink = TRUE;
 		info.strLocalPath = strOutFile;   // 记录用户实际选择的下载/链接路径
 		aaApi_SelectProject(item.lProjectId);
@@ -372,8 +411,10 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 	PWHelper::RegisterLinkFolder(strDir);
 
 	CString strMsg;
-	strMsg.Format(_T("链接完成：成功 %d 个，失败 %d 个。\n模型已下载到：\n%s\n\n注：独立演示程序不包含探索者CAD的\"插入当前模型\"功能。"),
+	strMsg.Format(_T("链接完成：成功 %d 个，失败 %d 个。\n模型已下载到：\n%s"),
 		nOk, nFail, (LPCTSTR)strDir);
+	if (!strFailInfo.IsEmpty())
+		strMsg += _T("\n\n失败原因：\n") + strFailInfo;
 	AfxMessageBox(strMsg);
 }
 
@@ -425,10 +466,11 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 			return;
 		}
 
-		// 更新 INI：记录最新版本 docid 与时间
+		// 更新 INI：记录最新版本 docid、版本号与时间
 		LONG lNewDocId = PWHelper::GetLatestDocumentId(addr.lProjectId, addr.lDocumentId);
 		if (lNewDocId > 0)
 			addr.lDocumentId = lNewDocId;
+		addr.strVersion = PWHelper::GetVersion(addr.lProjectId, addr.lDocumentId);
 		addr.strVersionDate = PWHelper::GetVersionDate(addr.lProjectId, addr.lDocumentId);
 		PWHelper::SavePwAddr(strFolder, strFileName, addr);
 
@@ -458,7 +500,8 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 		LPCWSTR psz = aaApi_GetProjectStringProperty(PROJ_PROP_NAME, 0);
 		if (psz != NULL)
 			info.strProjectName = psz;
-		info.strVersionDate = PWHelper::GetLatestVersionDate(nPrjID, lDocId);
+		info.strVersion = PWHelper::GetVersion(nPrjID, lDocId);
+		info.strVersionDate = PWHelper::GetVersionDate(nPrjID, lDocId);
 		info.bLink = FALSE;
 		PWHelper::SavePwAddr(strFolder, strFileName, info);
 

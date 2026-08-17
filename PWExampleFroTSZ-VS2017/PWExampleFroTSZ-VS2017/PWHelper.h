@@ -14,6 +14,7 @@ namespace PWHelper
         LONG    lProjectId;       // PW 目录(项目) ID
         CString strProjectName;   // 目录名
         LONG    lDocumentId;      // 文档 ID
+        CString strVersion;       // 下载时 PW 版本号（如 A/B/C）
         CString strVersionDate;   // 下载时 PW 版本更新时间
         CString strComment;       // 最近一次上传版本说明
         BOOL    bLink;            // 链接状态 1=已链接 0=未链接
@@ -37,9 +38,10 @@ namespace PWHelper
         LONG    lAccess;          // AADMS_ACCESS_*
         LONG    lChosenDocId;     // 用户经"历史版本"列选定的版本docid；0=未选(打开/链接时用最新)
         LONG    lOriginalNo;      // DOC_PROP_ORIGINALNO：活动版本=0，历史版本=活动版本docid
+        LONG    lVersionCount;    // 同名文档(版本)数量，用于"历史版本"列显示"N个版本"
 
         PWDocItem()
-            : lProjectId(0), lDocumentId(0), lAccess(0), lChosenDocId(0), lOriginalNo(0)
+            : lProjectId(0), lDocumentId(0), lAccess(0), lChosenDocId(0), lOriginalNo(0), lVersionCount(0)
         {
         }
     };
@@ -89,6 +91,13 @@ namespace PWHelper
     BOOL    RegisterLinkFolder(LPCTSTR pszFolder);       // 登记一个链接目录（去重）
     void    EnumLinkFolders(CStringArray& arrFolders);   // 返回所有链接目录（始终含默认 LinkModel）
 
+    // ---- 最近使用参数（%APPDATA%\PWTool\Settings.ini）----
+    // 记录用户上次修改过的参数（如本地下载目录），下次打开自动带出，无需重复填写。
+    // 配置存用户目录而非 exe 目录：exe 可能部署在 Program Files 下不可写。
+    CString GetSettingsIniPath();                              // %APPDATA%\PWTool\Settings.ini
+    CString GetLastLocalPath(BOOL bLinkMode);                  // 上次使用的本地下载目录（0=打开 1=链接）；无记录返回空
+    void    SetLastLocalPath(LPCTSTR pszPath, BOOL bLinkMode); // 记录上次使用的本地下载目录
+
     // ---- PW 操作 ----
     // 由文档的任一版本 docid 解析出该文档当前(最新)版本的 docid。
     // [修复] ProjectWise 每个版本是独立的 docid，服务器上检入新版本后旧 docid 仍指向旧版本；
@@ -105,13 +114,24 @@ namespace PWHelper
     LONG    EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
                                   CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
     // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
-    BOOL    DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir, CString& strOutFile); // CopyOutDocument
+    // [修复1] 目标目录已有同名文件时直接 CopyOut 会失败或生成带序号的新文件（重新链接/覆盖
+    // 下载被误判失败）。现先下载到临时子目录再覆盖到工作目录，保证同名文件被真正更新。
+    // [修复2] 当前版本：FetchDocumentFromServer + AADMS_DOCFETCH_IGNORE_UPTODATECOPY 强制从
+    // 服务器重新下载，避免复用本地缓存里旧内容（本数据源新版本会重分配 docid，缓存易判错）。
+    // [修复3] 历史版本：SDK 在 AADMS_PAR_DIS_SHOW_VERSION=0 时拒绝拷出非当前版本，临时置 1
+    // 再恢复，并用 CopyOutDocument 取数，保证"链接回前一个版本"也能下载。
+    // [修复4] 每次用唯一临时子目录（__pwdl_<docid>_<序号>）：同一文档先拷出活动版本后，再拷
+    // 其他版本到同一目录会报 AAERR_DMS_ERR_CO_LOCATION_IS_USED(58218，"拷出位置已被占用")。
+    // 成功返回 TRUE 且 strOutFile 为最终落盘路径；失败返回 FALSE，pstrErr 非空时给出原因。
+    BOOL    DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
+                             CString& strOutFile, CString* pstrErr = NULL); // CopyOutDocument
     // 下载指定版本并覆盖本地链接文件。下载直接落到目标文件所在目录；若 CopyOut 因同名文件
     // 生成了带序号的新文件，则把它覆盖/移动到链接文件上。成功返回 TRUE，失败时 strErr 给出原因；
     // pstrOutFile 非空时回传 CopyOut 实际写入的文件路径（便于诊断）。
     BOOL    DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile,
                                CString& strErr, CString* pstrOutFile = NULL);
     CString GetVersionDate(LONG lProjectId, LONG lDocumentId);            // 读取指定 docid 对应版本的时间 FILE_UPDATE_TIME（不解析最新）
+    CString GetVersion(LONG lProjectId, LONG lDocumentId);                // 读取指定 docid 对应版本号 DOC_PROP_VERSION（不解析最新）
     CString GetLatestVersionDate(LONG lProjectId, LONG lDocumentId);      // 解析最新版本 + FILE_UPDATE_TIME
     CString GetLatestVersion(LONG lProjectId, LONG lDocumentId);          // 解析最新版本 + DOC_PROP_VERSION
     LONG    GetDocumentAccess(LONG lProjectId, LONG lDocumentId, LONG lIndex = -1); // aaApi_GetDocumentAccess（lIndex>=0时用当前buffer，不重新select）
