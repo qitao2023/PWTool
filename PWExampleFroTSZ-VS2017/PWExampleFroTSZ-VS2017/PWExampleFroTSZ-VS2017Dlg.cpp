@@ -113,6 +113,8 @@ BOOL CPWExampleFroTSZVS2017Dlg::OnInitDialog()
 	// TODO: 在此添加额外的初始化代码
 
 	// PW 采用惰性登录：需要登录时由各功能按钮或"登录PW"按钮触发
+	// 启动时若已处于登录状态（如登录会话未过期），标题直接显示当前账号
+	UpdateLoginTitle();
 
 	return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
@@ -171,7 +173,10 @@ HCURSOR CPWExampleFroTSZVS2017Dlg::OnQueryDragIcon()
 void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogin()
 {
 	if (PWHelper::EnsureLogin(this))
+	{
+		UpdateLoginTitle();
 		AfxMessageBox(_T("已登录PW系统。"));
+	}
 }
 
 
@@ -182,9 +187,33 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogout()
 		return;
 
 	if (PWHelper::Logout())
+	{
+		UpdateLoginTitle();
 		AfxMessageBox(_T("已退出登录，可切换到其他账号重新登录。"));
+	}
 	else
 		AfxMessageBox(_T("退出登录失败：") + PWHelper::GetLastErrorText());
+}
+
+
+// 登录状态同步到窗口标题：已登录时标题显示当前账号，退出登录时恢复默认标题
+void CPWExampleFroTSZVS2017Dlg::UpdateLoginTitle()
+{
+	// 首次调用时记录窗口默认标题（来自资源对话框标题），之后作为标题前缀
+	if (m_strBaseTitle.IsEmpty())
+		GetWindowText(m_strBaseTitle);
+
+	CString strTitle = m_strBaseTitle;
+	if (PWHelper::IsLoggedIn())
+	{
+		CString strUser = PWHelper::GetCurrentUserName();
+		if (!strUser.IsEmpty())
+		{
+			strTitle += _T(" - 已登录：");
+			strTitle += strUser;
+		}
+	}
+	SetWindowText(strTitle);
 }
 
 
@@ -193,6 +222,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen()
 {
 	if (!PWHelper::EnsureLogin(this))
 		return;
+	UpdateLoginTitle();   // 本次可能刚完成登录，同步标题账号
 
 	CDocListDlg dlg(CDocListDlg::MODE_OPEN, this);
 	if (dlg.DoModal() != IDOK)
@@ -277,6 +307,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 {
 	if (!PWHelper::EnsureLogin(this))
 		return;
+	UpdateLoginTitle();   // 本次可能刚完成登录，同步标题账号
 
 	CDocListDlg dlg(CDocListDlg::MODE_LINK, this);
 	if (dlg.DoModal() != IDOK)
@@ -373,6 +404,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 
 	if (!PWHelper::EnsureLogin(this))
 		return;
+	UpdateLoginTitle();   // 本次可能刚完成登录，同步标题账号
 
 	CString strFolder = PWHelper::GetFileFolder(strModel);
 	CString strFileName = PWHelper::GetFileName(strModel);

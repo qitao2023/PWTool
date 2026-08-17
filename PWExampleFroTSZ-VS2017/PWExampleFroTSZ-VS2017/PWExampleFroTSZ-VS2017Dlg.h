@@ -20,6 +20,7 @@ public:
 // 实现
 protected:
 	HICON m_hIcon;
+	CString m_strBaseTitle;   // 窗口默认标题（不含账号后缀），首次 UpdateLoginTitle 时记录
 
 	// 生成的消息映射函数
 	virtual BOOL OnInitDialog();
@@ -35,6 +36,9 @@ public:
 	afx_msg void OnBnClickedPwLink();
 	afx_msg void OnBnClickedPwLinkMgr();
 	afx_msg void OnBnClickedPwUpload();
+
+	// 登录状态同步到窗口标题：已登录时标题显示当前账号，退出登录时恢复默认标题
+	void UpdateLoginTitle();
 
 	// 当前打开的模型文件（供上传使用）
 	CString m_strCurrentModelPath;
