@@ -97,6 +97,21 @@ BOOL IsLoggedIn()
     return aaApi_GetCurrentUserId() != 0;
 }
 
+// 当前登录账号：取当前用户记录的用户名（USER_PROP_NAME，即登录账号）。
+// 未登录或获取失败时返回空串。
+CString GetCurrentUserName()
+{
+    LONG lUserId = aaApi_GetCurrentUserId();
+    if (lUserId <= 0)
+        return CString();
+
+    if (aaApi_SelectUser(lUserId) != 1)
+        return CString();
+
+    const WCHAR* psz = aaApi_GetUserStringProperty(USER_PROP_NAME, 0);
+    return (psz != NULL) ? CString(psz) : CString(_T(""));
+}
+
 BOOL EnsureLogin(CWnd* pParent)
 {
     if (IsLoggedIn())
@@ -771,6 +786,32 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
     {
         strErr = _T("检入失败：") + GetLastErrorText();
         return FALSE;
+    }
+
+    // 4. [修复] 官方检入框解析"要检入哪个文件"用的是它自己的逻辑（工作区/配置工作目录），
+    //    不是我们在临时目录覆盖的工作副本，因此它检入的新版本内容往往是服务器旧内容——
+    //    实测表现"版本号有增加但上传的内容不是最新"。检入框建出新版本后，再用直接 API
+    //    （CheckOut->覆盖本地->CheckIn，不建版本、只原地更新内容）把最新版本内容改写为本地文件，
+    //    保证上传的新版本内容就是本地最新。直接 API 检入传内容此前已验证正确。
+    LONG lNewDocId = GetLatestDocumentId(lProjectId, lDocumentId);
+    if (lNewDocId > 0)
+    {
+        TCHAR szOut2[MAX_PATH * 2] = { 0 };
+        if (aaApi_CheckOutDocument(lProjectId, lNewDocId, strTempDir, szOut2, MAX_PATH * 2))
+        {
+            BOOL bCopied = CopyFile(pszLocalFile, szOut2, FALSE);
+            BOOL bCheckIn = aaApi_CheckInDocument(lProjectId, lNewDocId);   // 检入时释放锁
+            if (!bCopied || !bCheckIn)
+            {
+                strErr = _T("新版本内容修正失败：") + GetLastErrorText();
+                return FALSE;
+            }
+        }
+        else
+        {
+            strErr = _T("新版本内容修正失败：") + GetLastErrorText();
+            return FALSE;
+        }
     }
 
     if (pOutNewVersion)

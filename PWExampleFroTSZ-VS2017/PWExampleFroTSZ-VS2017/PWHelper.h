@@ -64,6 +64,7 @@ namespace PWHelper
     BOOL    IsLoggedIn();                                 // aaApi_GetCurrentUserId()!=0
     BOOL    EnsureLogin(CWnd* pParent);                   // 未登录则弹登录框，返回是否成功
     BOOL    Logout();                                     // 退出登录（断开活动数据源，便于切换账号）
+    CString GetCurrentUserName();                         // 当前登录账号(USER_PROP_NAME)；未登录返回空
     CString GetDatasourceName();                          // aaApi_GetActiveDatasourceName
 
     // ---- DLL 搜索路径（仅Win32，不得调用任何 aaApi_*，供延迟加载前使用）----
@@ -117,6 +118,8 @@ namespace PWHelper
     // 上传新版本：CheckOut->覆盖工作副本->弹出官方检入对话框（走工作流路径，可生成新版本）。
     // [数据源] Rules Engine 控制版本时，直接 API 检入不建版本；官方检入对话框可让用户
     // 确认"生成新版本"，版本号留空系统自动分配。返回是否成功；pOutNewVersion 非空回传是否生成了新版本。
+    // [修复] 检入框解析工作文件用"用户配置的工作目录"而非临时目录，故检出目标直接用配置的
+    // 工作目录并覆盖为本地最新内容，否则检入框检入工作区里的陈旧副本（版本号增但内容不是最新）。
     BOOL    UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
                              LPCTSTR pszLocalFile, LPCTSTR pszWorkDir,
                              const CString& strComment, CString& strErr,
