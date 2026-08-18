@@ -97,11 +97,10 @@ BOOL IsLoggedIn()
     return aaApi_GetCurrentUserId() != 0;
 }
 
-// 当前登录账号：取当前用户记录的用户名（USER_PROP_NAME，即登录账号）。
-// 未登录或获取失败时返回空串。
-CString GetCurrentUserName()
+// 由用户ID取登录账号（USER_PROP_NAME，即登录账号）；ID无效或获取失败返回空串。
+// 用于版本枚举时把 DOC_PROP_CREATORID / DOC_PROP_UPDATERID 解析成可读的账号名。
+CString GetUserNameById(LONG lUserId)
 {
-    LONG lUserId = aaApi_GetCurrentUserId();
     if (lUserId <= 0)
         return CString();
 
@@ -110,6 +109,13 @@ CString GetCurrentUserName()
 
     const WCHAR* psz = aaApi_GetUserStringProperty(USER_PROP_NAME, 0);
     return (psz != NULL) ? CString(psz) : CString(_T(""));
+}
+
+// 当前登录账号：取当前用户记录的用户名（USER_PROP_NAME，即登录账号）。
+// 未登录或获取失败时返回空串。
+CString GetCurrentUserName()
+{
+    return GetUserNameById(aaApi_GetCurrentUserId());
 }
 
 BOOL EnsureLogin(CWnd* pParent)
@@ -700,6 +706,16 @@ BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
     return TRUE;
 }
 
+// 解析版本记录中的创建人/修改人用户ID为登录账号名（填回 item 的 str*Name）。
+// 用户ID为0或解析失败时保持空串，由调用方显示"-"。
+static void FillVersionUserNames(PWDocVersionItem& item)
+{
+    if (item.lCreatorId > 0)
+        item.strCreatorName = GetUserNameById(item.lCreatorId);
+    if (item.lUpdaterId > 0)
+        item.strUpdaterName = GetUserNameById(item.lUpdaterId);
+}
+
 LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
                           CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions)
 {
@@ -726,10 +742,13 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
             item.lDocumentId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_ID, i);
             item.lVersionNo = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_VERSIONNO, i);
             item.lSize = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_SIZE, i);
+            item.lCreatorId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_CREATORID, i);
+            item.lUpdaterId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_UPDATERID, i);
             const WCHAR* psz = aaApi_DmsDataBufferGetStringProperty(hBuf, DOC_PROP_VERSION, i);
             if (psz) item.strVersion = psz;
             psz = aaApi_DmsDataBufferGetStringProperty(hBuf, DOC_PROP_FILE_UPDATE_TIME, i);
             if (psz) item.strUpdateTime = psz;
+            FillVersionUserNames(item);
             arrVersions.Add(item);
         }
         aaApi_DmsDataBufferFree(hBuf);
@@ -745,10 +764,13 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
             item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
             item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
             item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
+            item.lCreatorId = aaApi_GetDocumentNumericProperty(DOC_PROP_CREATORID, i);
+            item.lUpdaterId = aaApi_GetDocumentNumericProperty(DOC_PROP_UPDATERID, i);
             const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
             if (psz) item.strVersion = psz;
             psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
             if (psz) item.strUpdateTime = psz;
+            FillVersionUserNames(item);
             arrVersions.Add(item);
         }
     }
@@ -762,10 +784,13 @@ LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
         {
             item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, 0);
             item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, 0);
+            item.lCreatorId = aaApi_GetDocumentNumericProperty(DOC_PROP_CREATORID, 0);
+            item.lUpdaterId = aaApi_GetDocumentNumericProperty(DOC_PROP_UPDATERID, 0);
             const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, 0);
             if (psz) item.strVersion = psz;
             psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, 0);
             if (psz) item.strUpdateTime = psz;
+            FillVersionUserNames(item);
         }
         arrVersions.Add(item);
     }
@@ -840,10 +865,13 @@ LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
         item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
         item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
         item.lOriginalNo = aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, i);
+        item.lCreatorId = aaApi_GetDocumentNumericProperty(DOC_PROP_CREATORID, i);
+        item.lUpdaterId = aaApi_GetDocumentNumericProperty(DOC_PROP_UPDATERID, i);
         psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
         if (psz) item.strVersion = psz;
         psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
         if (psz) item.strUpdateTime = psz;
+        FillVersionUserNames(item);
         arrVersions.Add(item);
     }
 
@@ -866,6 +894,65 @@ LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
         }
 
     return (LONG)arrVersions.GetSize();
+}
+
+// 在项目内按文件名查找已存在文档，返回其最新(活动)版本 docid；不存在返回 0。
+// [用途] 多人上传同一文件名：B 首次上传时目标目录已有 A 上传的同名文档，
+// 不能再 aaApi_CreateDocument 新建，改为对已存在文档上传新版本（版本继续往后排）。
+// 复用 EnumSameNameDocuments 的扫描模式：SelectDocumentsByProjectId 全量返回项目内
+// 文档行（含各版本），按文件名不区分大小写匹配，优先取活动版本(ORIGINALNO=0)的 docid。
+LONG FindDocumentIdByName(LONG lProjectId, LPCTSTR pszFileName)
+{
+    if (lProjectId <= 0 || pszFileName == NULL || pszFileName[0] == _T('\0'))
+        return 0;
+
+    CString strName(pszFileName);
+    LONG nAll = aaApi_SelectDocumentsByProjectId(lProjectId);
+    LONG lActiveDoc = 0, lFallbackDoc = 0;
+    for (LONG i = 0; i < nAll; i++)
+    {
+        const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, i);
+        if (!psz || strName.CompareNoCase(psz) != 0)
+            continue;
+        LONG lDocId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
+        if (aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, i) == 0)
+            lActiveDoc = lDocId;            // 活动版本(最新)优先
+        else if (lFallbackDoc == 0)
+            lFallbackDoc = lDocId;
+    }
+    return (lActiveDoc != 0) ? lActiveDoc : lFallbackDoc;
+}
+
+// 便捷版：枚举指定文档全部同名版本后写 dump 到 exe 目录 pw_version_dump.txt。
+void DumpDocumentVersionsToFile(LONG lProjectId, LONG lDocumentId)
+{
+    CArray<PWDocVersionItem, PWDocVersionItem&> arr;
+    EnumSameNameDocuments(lProjectId, lDocumentId, arr);
+    CString strPath = GetAppBaseDir() + _T("pw_version_dump.txt");
+    DumpVersionItems(arr, strPath);
+}
+
+// 诊断：把各版本原始字段写到日志文件（UTF-8），便于排查创建人/上传人字段被数据源写反的问题。
+void DumpVersionItems(const CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions,
+                      LPCTSTR pszLogPath)
+{
+    FILE* f = NULL;
+    _wfopen_s(&f, pszLogPath, L"w, ccs=UTF-8");
+    if (f == NULL)
+        return;
+
+    fwprintf(f, L"# version | versionno | docid | originalno | creatorid | updaterid | creator | updater | time\r\n");
+    for (INT_PTR i = 0; i < arrVersions.GetSize(); i++)
+    {
+        const PWDocVersionItem& v = arrVersions.GetAt(i);
+        fwprintf(f, L"%s | %ld | %ld | %ld | %ld | %ld | %s | %s | %s\r\n",
+            (LPCWSTR)v.strVersion, v.lVersionNo, v.lDocumentId, v.lOriginalNo,
+            v.lCreatorId, v.lUpdaterId,
+            v.strCreatorName.IsEmpty() ? L"-" : (LPCWSTR)v.strCreatorName,
+            v.strUpdaterName.IsEmpty() ? L"-" : (LPCWSTR)v.strUpdaterName,
+            (LPCWSTR)v.strUpdateTime);
+    }
+    fclose(f);
 }
 
 BOOL DownloadAndReplace(LONG lProjectId, LONG lDocumentId, LPCTSTR pszTargetFile,

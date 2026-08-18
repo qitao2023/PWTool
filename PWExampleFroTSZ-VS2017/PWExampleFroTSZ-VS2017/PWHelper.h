@@ -55,9 +55,14 @@ namespace PWHelper
         CString strUpdateTime;    // 文件更新时间 FILE_UPDATE_TIME
         LONG    lSize;            // 文件大小（字节）DOC_PROP_SIZE
         LONG    lOriginalNo;      // DOC_PROP_ORIGINALNO：活动版本=0，历史版本=活动版本docid
+        LONG    lCreatorId;       // 创建人 DOC_PROP_CREATORID（数据源建版本可能从上一版本克隆继承）
+        LONG    lUpdaterId;       // 修改人 DOC_PROP_UPDATERID（检入该版本的用户）
+        CString strCreatorName;   // 创建人用户名（解析后的登录账号）
+        CString strUpdaterName;   // 修改人(上传人)用户名
 
         PWDocVersionItem()
-            : lDocumentId(0), lVersionNo(0), lSize(0), lOriginalNo(0)
+            : lDocumentId(0), lVersionNo(0), lSize(0), lOriginalNo(0),
+              lCreatorId(0), lUpdaterId(0)
         {
         }
     };
@@ -67,6 +72,7 @@ namespace PWHelper
     BOOL    EnsureLogin(CWnd* pParent);                   // 未登录则弹登录框，返回是否成功
     BOOL    Logout();                                     // 退出登录（断开活动数据源，便于切换账号）
     CString GetCurrentUserName();                         // 当前登录账号(USER_PROP_NAME)；未登录返回空
+    CString GetUserNameById(LONG lUserId);                // 由用户ID取登录账号(USER_PROP_NAME)；失败返回空
     CString GetDatasourceName();                          // aaApi_GetActiveDatasourceName
 
     // ---- DLL 搜索路径（仅Win32，不得调用任何 aaApi_*，供延迟加载前使用）----
@@ -113,6 +119,14 @@ namespace PWHelper
     // 但 SelectDocumentsByProjectId 能返回全部同名文档——用后者枚举版本。
     LONG    EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
                                   CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
+    // 在项目内按文件名查找已存在文档，返回其最新(活动)版本 docid；不存在返回 0。
+    LONG    FindDocumentIdByName(LONG lProjectId, LPCTSTR pszFileName);
+    // 诊断：把指定文档各版本的原始字段（docid/版本串/版本号/originalno/创建人ID/修改人ID）写到日志文件，
+    // 用于排查"上传人/创建人错位"问题（本数据源建版本时创建人字段可能被写反）。
+    void    DumpVersionItems(const CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions,
+                             LPCTSTR pszLogPath);
+    // 便捷版：枚举指定文档全部同名版本后 DumpVersionItems 到 exe 目录 pw_version_dump.txt。
+    void    DumpDocumentVersionsToFile(LONG lProjectId, LONG lDocumentId);
     // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
     // [修复1] 目标目录已有同名文件时直接 CopyOut 会失败或生成带序号的新文件（重新链接/覆盖
     // 下载被误判失败）。现先下载到临时子目录再覆盖到工作目录，保证同名文件被真正更新。

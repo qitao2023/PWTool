@@ -474,6 +474,9 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 		addr.strVersionDate = PWHelper::GetVersionDate(addr.lProjectId, addr.lDocumentId);
 		PWHelper::SavePwAddr(strFolder, strFileName, addr);
 
+		// 诊断：上传后把服务器记录的每版创建人/修改人原始字段写到 exe 目录 pw_version_dump.txt
+		PWHelper::DumpDocumentVersionsToFile(addr.lProjectId, addr.lDocumentId);
+
 		AfxMessageBox(bNewVer ? _T("上传成功，已生成新版本。") : _T("上传成功。"));
 	}
 	else
@@ -482,6 +485,40 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
 		LONG nPrjID = aaApi_SelectProjectDlg(this->m_hWnd, _T("请选择上传目标目录"), 0);
 		if (nPrjID <= 0)
 			return;
+
+		// 目标目录可能已有同名文档（他人先上传过）：此时不能新建，改为上传新版本，版本继续往后排。
+		LONG lExistDocId = PWHelper::FindDocumentIdByName(nPrjID, strFileName);
+		if (lExistDocId > 0)
+		{
+			CString strErr;
+			BOOL bNewVer = FALSE;
+			if (!PWHelper::UploadNewVersion(this->GetSafeHwnd(),
+				nPrjID, lExistDocId, strModel, strFolder, _T(""), strErr, &bNewVer))
+			{
+				AfxMessageBox(_T("上传失败：") + strErr);
+				return;
+			}
+
+			// 记录 PW 地址来源（与"更新已有文档版本"分支一致）
+			PWHelper::PWAddrInfo info;
+			info.strDatasource = PWHelper::GetDatasourceName();
+			info.lProjectId = nPrjID;
+			aaApi_SelectProject(nPrjID);
+			LPCWSTR psz = aaApi_GetProjectStringProperty(PROJ_PROP_NAME, 0);
+			if (psz != NULL)
+				info.strProjectName = psz;
+			info.lDocumentId = PWHelper::GetLatestDocumentId(nPrjID, lExistDocId);
+			info.strVersion = PWHelper::GetVersion(nPrjID, info.lDocumentId);
+			info.strVersionDate = PWHelper::GetVersionDate(nPrjID, info.lDocumentId);
+			info.bLink = FALSE;
+			PWHelper::SavePwAddr(strFolder, strFileName, info);
+
+			// 诊断：上传后把服务器记录的每版创建人/修改人原始字段写到 exe 目录 pw_version_dump.txt
+			PWHelper::DumpDocumentVersionsToFile(nPrjID, info.lDocumentId);
+
+			AfxMessageBox(_T("上传成功，已作为新版本保存PW地址来源。"));
+			return;
+		}
 
 		LONG lDocId = 0;
 		CString strErr;
