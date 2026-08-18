@@ -52,7 +52,7 @@ BOOL CDocListDlg::OnInitDialog()
 	m_list.SetExtendedStyle(LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
 	m_list.InsertColumn(0, _T("名称"), LVCFMT_LEFT, 210);
 	m_list.InsertColumn(1, _T("版本"), LVCFMT_LEFT, 60);
-	m_list.InsertColumn(2, _T("更新时间"), LVCFMT_LEFT, 120);
+	m_list.InsertColumn(2, _T("更新时间"), LVCFMT_LEFT, 200);
 	m_list.InsertColumn(3, _T("权限"), LVCFMT_LEFT, 60);
 	m_list.InsertColumn(COL_HISTVER, _T("历史版本"), LVCFMT_CENTER, 105);
 

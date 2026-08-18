@@ -589,82 +589,125 @@ BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
     // AAERR_DMS_ERR_CO_LOCATION_IS_USED(58218，"拷出位置已被占用")——同一个本地目录内每个
     // 版本只能拷出一次。每次用新目录即可绕开（打开/链接到不同目录时本就不会冲突）。
     static LONG s_nPwTmpSeq = 0;
-    CString strTmpDir;
-    strTmpDir.Format(_T("%s\\__pwdl_%ld_%ld"), pszWorkDir, lDocumentId, ++s_nPwTmpSeq);
-    if (!CreateDirRecursive(strTmpDir))
-        return FALSE;
 
-    TCHAR szOut[MAX_PATH * 2] = { 0 };
+    // [修复] 首次拷出可能瞬时失败：PW 服务端偶发报 "Error copying document 'xxx' to client."，
+    // 但同一操作第二次即成功（登录后会话/缓存未就绪或服务端瞬时状态所致）。现对拷出自动重试
+    // （最多3次、失败间隔1秒、每次用全新临时目录绕开"位置占用"），把"手动重试才成功"变成
+    // "一次点击即成功"。每次失败记一行日志（含错误码）；最终仍失败时把错误码一并带给调用方。
+    const int MAX_TRY = 3;
     BOOL bOk = FALSE;
-
-    // 判断该 docid 是否为活动(当前)版本：活动版本 ORIGINALNO=0，历史版本 ORIGINALNO>0。
-    // 两种版本采用不同的取数方式（见下）。顺带记录版本属性用于失败诊断。
+    TCHAR szOut[MAX_PATH * 2] = { 0 };
+    CString strTmpDir;      // 成功那次所使用的临时目录
+    CString strDl;          // 成功那次下载写出的文件（含完整路径）
+    CString strErrLast;     // 最近一次失败的原因（拷出失败取自 SDK；拷出成功但无输出文件时自拟）
+    LONG lLastErrId = 0;
     BOOL bIsActive = FALSE;
     LONG lDocSize = 0;
-    if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
-    {
-        bIsActive = (aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, 0) == 0);
-        lDocSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, 0);
-    }
-
     LONG lShowVer = -1;
-    BOOL bToggled = FALSE;
-    if (bIsActive)
+
+    for (int nTry = 0; nTry < MAX_TRY && !bOk; nTry++)
     {
-        // 当前版本：加 AADMS_DOCFETCH_IGNORE_UPTODATECOPY 强制从服务器重新下载，
-        // 避免 SDK 复用本地缓存里"判为已最新"的旧版本内容——本数据源创建新版本时会重分配
-        // docid，缓存容易把旧版本内容误当成最新版，导致"链接最新版却下到旧内容"。
-        ULONG ulFetch = AADMS_DOCFETCH_COPYOUT
-            | AADMS_DOCFETCH_IGNORE_UPTODATECOPY
-            | AADMS_DOCFETCH_MASTER_AS_SET
-            | AADMS_DOCFETCH_NESTED_REFERENCES
-            | AADMS_DOCFETCH_REDLINED_REFERENCES;
-        bOk = aaApi_FetchDocumentFromServer(ulFetch, lProjectId, lDocumentId,
-                                            strTmpDir, szOut, MAX_PATH * 2);
-    }
-    else
-    {
-        // 历史版本：SDK 在用户设置 AADMS_PAR_DIS_SHOW_VERSION=0（"只显示当前版本"）时
-        // 拒绝拷出非当前版本。临时打开该设置再恢复（仅客户端本地生效，无需管理员权限）。
-        // 取数用 CopyOutDocument（原已验证可下载历史版本的路径），不加 IGNORE_UPTODATECOPY。
-        lShowVer = aaApi_GetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION);
-        if (lShowVer == 0)
-            bToggled = aaApi_SetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION, 1);
-        bOk = aaApi_CopyOutDocument(lProjectId, lDocumentId, strTmpDir, szOut, MAX_PATH * 2);
-        if (bToggled)
-            aaApi_SetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION, lShowVer);   // 恢复原值
+        strTmpDir.Format(_T("%s\\__pwdl_%ld_%ld"), pszWorkDir, lDocumentId, ++s_nPwTmpSeq);
+        if (!CreateDirRecursive(strTmpDir))
+        {
+            if (pstrErr != NULL)
+                *pstrErr = _T("创建临时目录失败。");
+            return FALSE;
+        }
+        szOut[0] = _T('\0');
+        strErrLast.Empty();
+        lLastErrId = 0;
+
+        // 判断该 docid 是否为活动(当前)版本：活动版本 ORIGINALNO=0，历史版本 ORIGINALNO>0。
+        // 两种版本采用不同的取数方式。重试时重新判定——首次失败也可能源于 SelectDocument
+        // 在会话刚建立时短暂不可用。
+        bIsActive = FALSE;
+        lDocSize = 0;
+        if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+        {
+            bIsActive = (aaApi_GetDocumentNumericProperty(DOC_PROP_ORIGINALNO, 0) == 0);
+            lDocSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, 0);
+        }
+
+        BOOL bToggled = FALSE;
+        lShowVer = -1;
+        if (bIsActive)
+        {
+            // 当前版本：加 AADMS_DOCFETCH_IGNORE_UPTODATECOPY 强制从服务器重新下载，
+            // 避免 SDK 复用本地缓存里"判为已最新"的旧版本内容——本数据源创建新版本时会重分配
+            // docid，缓存容易把旧版本内容误当成最新版，导致"链接最新版却下到旧内容"。
+            ULONG ulFetch = AADMS_DOCFETCH_COPYOUT
+                | AADMS_DOCFETCH_IGNORE_UPTODATECOPY
+                | AADMS_DOCFETCH_MASTER_AS_SET
+                | AADMS_DOCFETCH_NESTED_REFERENCES
+                | AADMS_DOCFETCH_REDLINED_REFERENCES;
+            bOk = aaApi_FetchDocumentFromServer(ulFetch, lProjectId, lDocumentId,
+                                                strTmpDir, szOut, MAX_PATH * 2);
+        }
+        else
+        {
+            // 历史版本：SDK 在用户设置 AADMS_PAR_DIS_SHOW_VERSION=0（"只显示当前版本"）时
+            // 拒绝拷出非当前版本。临时打开该设置再恢复（仅客户端本地生效，无需管理员权限）。
+            // 取数用 CopyOutDocument（原已验证可下载历史版本的路径），不加 IGNORE_UPTODATECOPY。
+            lShowVer = aaApi_GetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION);
+            if (lShowVer == 0)
+                bToggled = aaApi_SetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION, 1);
+            bOk = aaApi_CopyOutDocument(lProjectId, lDocumentId, strTmpDir, szOut, MAX_PATH * 2);
+            if (bToggled)
+                aaApi_SetUserNumericSetting(AADMS_PAR_DIS_SHOW_VERSION, lShowVer);   // 恢复原值
+        }
+
+        if (bOk)
+        {
+            // 拷出返回成功但未回填文件名时，按文档 FILENAME 属性拼出临时文件路径
+            strDl = szOut;
+            if (strDl.IsEmpty() && aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
+            {
+                const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, 0);
+                if (psz != NULL)
+                    strDl = strTmpDir + _T("\\") + psz;
+            }
+            if (strDl.IsEmpty() || GetFileAttributes(strDl) == INVALID_FILE_ATTRIBUTES)
+            {
+                // 拷出"成功"却没产出文件，同样按一次失败处理，下次重试
+                bOk = FALSE;
+                strErrLast = _T("下载后未找到输出文件。");
+            }
+        }
+
+        if (!bOk)
+        {
+            // 完整诊断：错误ID + 版本属性(活动? 服务器记录的文件大小) + 设置切换情况，每次尝试各记一行
+            if (strErrLast.IsEmpty())   // 拷出失败时取 SDK 错误；"无输出文件"时已在上方赋值
+            {
+                lLastErrId = aaApi_GetLastErrorId();
+                strErrLast = GetLastErrorText();
+            }
+            CString strDbg;
+            strDbg.Format(_T("下载失败(第%d/%d次): 项目=%ld docid=%ld 活动=%d 服务器大小=%ld showVer=%ld 切换=%d errId=%ld err=%s"),
+                nTry + 1, MAX_TRY, lProjectId, lDocumentId, (int)bIsActive, lDocSize,
+                lShowVer, (int)bToggled, lLastErrId, (LPCTSTR)strErrLast);
+            LogPwDebug(strDbg);
+            RemoveDirRecursive(strTmpDir);
+            if (nTry + 1 < MAX_TRY)
+                Sleep(1000);   // 短暂停顿，让服务端会话/状态就绪后再重试
+        }
     }
 
     if (!bOk)
     {
-        // 完整诊断：错误ID + 版本属性(活动? 服务器记录的文件大小) + 设置切换情况，便于定位
-        CString strDbg;
-        strDbg.Format(_T("下载失败: 项目=%ld docid=%ld 活动=%d 服务器大小=%ld showVer=%ld 切换=%d errId=%ld err=%s"),
-            lProjectId, lDocumentId, (int)bIsActive, lDocSize, lShowVer, (int)bToggled,
-            aaApi_GetLastErrorId(), (LPCTSTR)GetLastErrorText());
-        LogPwDebug(strDbg);
+        // 三次尝试均失败：把最终原因（含错误码）带给调用方显示/记录
         if (pstrErr != NULL)
-            *pstrErr = GetLastErrorText();
-        RemoveDirRecursive(strTmpDir);
-        return FALSE;
-    }
-
-    CString strDl(szOut);   // 下载写出的文件（含完整路径）
-    if (strDl.IsEmpty())
-    {
-        // 未回填文件名时，按文档 FILENAME 属性拼出临时文件路径
-        if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
         {
-            const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILENAME, 0);
-            if (psz != NULL)
-                strDl = strTmpDir + _T("\\") + psz;
+            if (lLastErrId != 0)
+            {
+                CString strFinal;
+                strFinal.Format(_T("%s (错误码 %ld)"), (LPCTSTR)strErrLast, lLastErrId);
+                *pstrErr = strFinal;
+            }
+            else
+                *pstrErr = strErrLast;
         }
-    }
-    if (strDl.IsEmpty() || GetFileAttributes(strDl) == INVALID_FILE_ATTRIBUTES)
-    {
-        if (pstrErr != NULL)
-            *pstrErr = _T("下载后未找到输出文件。");
-        RemoveDirRecursive(strTmpDir);
         return FALSE;
     }
 
@@ -1060,7 +1103,10 @@ LONG GetDocumentAccess(LONG lProjectId, LONG lDocumentId, LONG lIndex)
 static BOOL g_bCheckInFired = FALSE;
 
 // 检入对话框回调：检入操作时把 isNewVersionCreated 强制置 TRUE，
-// 使每次检入都自动生成新版本（无需用户手动勾选"生成新版本"）
+// 使每次检入都自动生成新版本（无需用户手动勾选"生成新版本"）。
+// [注] 2026-08-18 实测：该数据源 API 检入框建版本时创建人固定轮转错位（新版本继承旧版
+// 创建人、旧版创建人被覆盖成当前人），手动勾选/程序强制都一样，App 端无法规避；
+// 上传人(DOC_PROP_UPDATERID)每版记录正确，版本列表以"上传人"列为准。
 static LONG_PTR CALLBACK CheckInDlgForceNewVersionCb(AAPARAM callbackParam,
     eCheckInDlgMessage_t msgID, LPVOID msgData, LONG_PTR unhandledReturnCode)
 {
@@ -1137,6 +1183,9 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
     WCHAR szComment[512] = { 0 };
     _tcsncpy_s(szComment, 512, strComment, _TRUNCATE);
 
+    // 记录检入前的版本串，用于检入后判断是否真的生成了新版本
+    CString strVerBefore = GetVersion(lProjectId, lDocumentId);
+
     g_bCheckInFired = FALSE;
     BOOL bOk = aaApi_DisplayDocumentCheckInActionDlg2(
         hWndParent,
@@ -1188,8 +1237,12 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
         }
     }
 
+    // 检入后解析最新版本，与检入前版本串比对：不同=用户勾选了"创建新版本"、生成了新版本。
+    CString strVerAfter;
+    if (lNewDocId > 0)
+        strVerAfter = GetVersion(lProjectId, lNewDocId);
     if (pOutNewVersion)
-        *pOutNewVersion = TRUE;
+        *pOutNewVersion = (!strVerAfter.IsEmpty() && strVerAfter != strVerBefore);
     return TRUE;
 }
 

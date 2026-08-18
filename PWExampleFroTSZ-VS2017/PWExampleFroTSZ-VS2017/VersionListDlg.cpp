@@ -57,12 +57,20 @@ BOOL CDlgVersionList::OnInitDialog()
 	m_list.InsertColumn(1, _T("版本"), LVCFMT_LEFT, 80);
 	m_list.InsertColumn(2, _T("更新时间"), LVCFMT_LEFT, 150);
 	m_list.InsertColumn(3, _T("大小"), LVCFMT_LEFT, 70);
-	m_list.InsertColumn(4, _T("对象ID"), LVCFMT_LEFT, 90);
+	m_list.InsertColumn(4, _T("上传人"), LVCFMT_LEFT, 90);
+	m_list.InsertColumn(5, _T("对象ID"), LVCFMT_LEFT, 90);
 
 	int nCurRow = -1;
 	// 按文件名列出所有同名文档作为"版本"（版本集枚举 API 在本数据源只返回活动版本，
 	// 文档列表枚举能返回全部，故用 EnumSameNameDocuments）。
 	PWHelper::EnumSameNameDocuments(m_lProjectId, m_lDocumentId, m_arrVersions);
+
+	// 诊断：把服务器记录的每版原始字段写到 exe 目录 pw_version_dump.txt，
+	// 用于排查"上传人/创建人"错位（本数据源建版本时创建人字段可能被写反）。
+	{
+		CString strDump = PWHelper::GetAppBaseDir() + _T("pw_version_dump.txt");
+		PWHelper::DumpVersionItems(m_arrVersions, strDump);
+	}
 
 	CString strTitle;
 	strTitle.Format(_T("选择版本（共 %d 个）"), (int)m_arrVersions.GetSize());
@@ -91,9 +99,13 @@ BOOL CDlgVersionList::OnInitDialog()
 		m_list.SetItemText(nRow, 1, strVer);
 		m_list.SetItemText(nRow, 2, v.strUpdateTime);
 		m_list.SetItemText(nRow, 3, FormatFileSize(v.lSize));
+		// 上传人=修改人(DOC_PROP_UPDATERID)：检入该版本的用户，每版记录正确。
+		// [注] 创建人(DOC_PROP_CREATORID)在该数据源建版本时会被轮转写错（新版本继承旧版
+		// 创建人、旧版创建人被覆盖成当前人），不可靠，故不显示。
+		m_list.SetItemText(nRow, 4, v.strUpdaterName.IsEmpty() ? _T("-") : v.strUpdaterName);
 		CString strId;
 		strId.Format(_T("%ld"), v.lDocumentId);
-		m_list.SetItemText(nRow, 4, strId);
+		m_list.SetItemText(nRow, 5, strId);
 	}
 
 	// 列表为空（异常情况）：加一行占位提示，避免空白弹窗

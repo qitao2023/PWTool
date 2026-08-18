@@ -152,6 +152,8 @@ namespace PWHelper
     // 上传新版本：CheckOut->覆盖工作副本->弹出官方检入对话框（走工作流路径，可生成新版本）。
     // [数据源] Rules Engine 控制版本时，直接 API 检入不建版本；官方检入对话框可让用户
     // 确认"生成新版本"，版本号留空系统自动分配。返回是否成功；pOutNewVersion 非空回传是否生成了新版本。
+    // [注] 该数据源 API 检入框建版本时创建人固定轮转错位（无法从 App 端规避），
+    // "上传人"(DOC_PROP_UPDATERID)每版记录正确，以版本列表"上传人"列为准。
     // [修复] 检入框解析工作文件用"用户配置的工作目录"而非临时目录，故检出目标直接用配置的
     // 工作目录并覆盖为本地最新内容，否则检入框检入工作区里的陈旧副本（版本号增但内容不是最新）。
     BOOL    UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
