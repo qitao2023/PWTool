@@ -442,9 +442,6 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
         PWHelper::SavePwAddrOfDocument(strFolder, strFileName, lProjectId, lNewDocId,
             bHasAddr ? addr.bLink : FALSE, bHasAddr ? addr.strComment : _T(""));
 
-        // 诊断：上传后把服务器记录的每版创建人/修改人原始字段写到 exe 目录 pw_version_dump.txt
-        PWHelper::DumpDocumentVersionsToFile(lProjectId, lNewDocId);
-
         CString strMsg;
         if (bHasAddr)
             strMsg = bNewVer ? _T("上传成功，已生成新版本。") : _T("上传成功。");

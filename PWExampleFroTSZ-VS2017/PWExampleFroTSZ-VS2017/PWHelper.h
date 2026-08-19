@@ -125,11 +125,11 @@ namespace PWHelper
                                   CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
     // 在项目内按文件名查找已存在文档，返回其最新(活动)版本 docid；不存在返回 0。
     LONG    FindDocumentIdByName(LONG lProjectId, LPCTSTR pszFileName);
-    // 诊断：把指定文档各版本的原始字段（docid/版本串/版本号/originalno/创建人ID/修改人ID）写到日志文件，
-    // 用于排查"上传人/创建人错位"问题（本数据源建版本时创建人字段可能被写反）。
+    // 诊断工具（排查"上传人/创建人错位"时手动调用，正常流程不调用）：
+    // 把指定文档各版本的原始字段（docid/版本串/版本号/originalno/创建人ID/修改人ID）写到日志文件。
     void    DumpVersionItems(const CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions,
                              LPCTSTR pszLogPath);
-    // 便捷版：枚举指定文档全部同名版本后 DumpVersionItems 到 exe 目录 pw_version_dump.txt。
+    // 诊断工具：枚举指定文档全部同名版本后 DumpVersionItems 到 exe 目录 pw_version_dump.txt。
     void    DumpDocumentVersionsToFile(LONG lProjectId, LONG lDocumentId);
     // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
     // [修复1] 目标目录已有同名文件时直接 CopyOut 会失败或生成带序号的新文件（重新链接/覆盖

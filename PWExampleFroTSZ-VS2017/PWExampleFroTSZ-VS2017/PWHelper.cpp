@@ -571,11 +571,9 @@ static void LogPwDebug(LPCTSTR pszLine)
 }
 
 // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
-// [修复] 目标目录已存在同名文件时 aaApi_CopyOutDocument 会失败（错误
-// AAERR_DMSFH_ERROR_FILE_ALREADY_EXISTS）或生成带序号的新文件，导致"重新链接/覆盖下载"
-// 被误判为失败、本地文件不被真正更新、INI 也不写入。现改为先下载到工作目录下的临时子目录
-// （目录内无同名文件，CopyOut 稳定成功并写回原始文件名），再把全部文件移动/覆盖到工作目录，
-// 返回最终落盘路径。成功返回 TRUE，strOutFile 为最终路径；失败返回 FALSE，pstrErr 非空时给出原因。
+// [修复] 目标目录已有同名文件时 CopyOutDocument 会失败或生成带序号的新文件，导致覆盖下载
+// 被误判失败。先下载到临时子目录（目录内无同名文件，写回原始文件名），再整体移动/覆盖到工作目录。
+// 成功返回 TRUE，strOutFile 为最终路径；失败返回 FALSE，pstrErr 非空时给出原因。
 BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
                       CString& strOutFile, CString* pstrErr)
 {
@@ -603,16 +601,13 @@ BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
         }
     }
 
-    // 用唯一的临时子目录下载（__pwdl_<docid>_<序号>）：目录内无同名文件，保证 CopyOut 稳定成功。
-    // [修复] 不能用固定目录名：同一文档先拷出活动版本后，再拷出其他版本到同一目录会触发
-    // AAERR_DMS_ERR_CO_LOCATION_IS_USED(58218，"拷出位置已被占用")——同一个本地目录内每个
-    // 版本只能拷出一次。每次用新目录即可绕开（打开/链接到不同目录时本就不会冲突）。
+    // 用唯一的临时子目录下载（__pwdl_<docid>_<序号>）。
+    // [修复] 同一文档的两个版本拷到同一目录会触发 AAERR_DMS_ERR_CO_LOCATION_IS_USED
+    // （"拷出位置已被占用"），每次用新目录绕开。
     static LONG s_nPwTmpSeq = 0;
 
-    // [修复] 首次拷出可能瞬时失败：PW 服务端偶发报 "Error copying document 'xxx' to client."，
-    // 但同一操作第二次即成功（登录后会话/缓存未就绪或服务端瞬时状态所致）。现对拷出自动重试
-    // （最多3次、失败间隔1秒、每次用全新临时目录绕开"位置占用"），把"手动重试才成功"变成
-    // "一次点击即成功"。每次失败记一行日志（含错误码）；最终仍失败时把错误码一并带给调用方。
+    // [修复] 首次拷出偶发瞬时失败、重试即成功（服务端会话/缓存未就绪），故自动重试
+    // （最多3次、间隔1秒、每次用全新临时目录）；每次失败记日志，最终失败带错误码给调用方。
     const int MAX_TRY = 3;
     BOOL bOk = FALSE;
     TCHAR szOut[MAX_PATH * 2] = { 0 };
@@ -736,8 +731,8 @@ BOOL DownloadDocument(LONG lProjectId, LONG lDocumentId, LPCTSTR pszWorkDir,
     // 把临时目录里所有文件（含引用的参照文件）移动/覆盖到工作目录
     MoveDirContents(strTmpDir, pszWorkDir);
 
-    // [修复] 判断"主文件是否真的被替换"：须同时满足 临时主文件已移走 && 目标文件已存在。
-    // 原仅判断目标文件存在：若移动失败（目标被 CAD 占用）旧文件仍在，会误判为成功。
+    // [修复] 判断主文件是否真被替换：临时主文件已移走 && 目标已存在，
+    // 只判目标存在会漏掉"移动失败但旧文件仍在"的误判成功。
     if (GetFileAttributes(strDl) != INVALID_FILE_ATTRIBUTES
         || GetFileAttributes(strMain) == INVALID_FILE_ATTRIBUTES)
     {
@@ -779,9 +774,8 @@ static void FillVersionUserNames(PWDocVersionItem& item)
 }
 
 // 按文件名列出项目内所有同名文档（每个同名文档视为一个"版本"），从新到旧排序。
-// [数据源] 版本集枚举 API(SelectDocumentDataBufferVersions / GetDocumentVersionCount)
-// 在本数据源只返回活动版本/0，但 SelectDocumentsByProjectId 会返回所有文档行（含各版本），
-// 因此用"按文件名匹配"来枚举版本。返回值=数量。
+// [数据源] 版本集枚举 API 在本数据源只返回活动版本，改用按文件名匹配所有文档行来枚举。
+// 返回值=数量。
 // 比较版本串（A<B<...<Z<AA）：返回 a>b ? 1 : (a<b ? -1 : 0)
 int CompareVersionStrings(LPCTSTR pszA, LPCTSTR pszB)
 {
@@ -868,9 +862,7 @@ LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
 
 // 在项目内按文件名查找已存在文档，返回其最新(活动)版本 docid；不存在返回 0。
 // [用途] 多人上传同一文件名：B 首次上传时目标目录已有 A 上传的同名文档，
-// 不能再 aaApi_CreateDocument 新建，改为对已存在文档上传新版本（版本继续往后排）。
-// 复用 EnumSameNameDocuments 的扫描模式：SelectDocumentsByProjectId 全量返回项目内
-// 文档行（含各版本），按文件名不区分大小写匹配，优先取活动版本(ORIGINALNO=0)的 docid。
+// 不能再新建，改为对已存在文档上传新版本。按文件名不区分大小写匹配，优先取活动版本。
 LONG FindDocumentIdByName(LONG lProjectId, LPCTSTR pszFileName)
 {
     if (lProjectId <= 0 || pszFileName == NULL || pszFileName[0] == _T('\0'))
@@ -1031,9 +1023,8 @@ static BOOL g_bCheckInFired = FALSE;
 
 // 检入对话框回调：检入操作时把 isNewVersionCreated 强制置 TRUE，
 // 使每次检入都自动生成新版本（无需用户手动勾选"生成新版本"）。
-// [注] 2026-08-18 实测：该数据源 API 检入框建版本时创建人固定轮转错位（新版本继承旧版
-// 创建人、旧版创建人被覆盖成当前人），手动勾选/程序强制都一样，App 端无法规避；
-// 上传人(DOC_PROP_UPDATERID)每版记录正确，版本列表以"上传人"列为准。
+// [注] 该数据源建版本时创建人字段会轮转写错（App 端无法规避），但上传人(DOC_PROP_UPDATERID)
+// 每版记录正确，版本列表以"上传人"列为准。
 static LONG_PTR CALLBACK CheckInDlgForceNewVersionCb(AAPARAM callbackParam,
     eCheckInDlgMessage_t msgID, LPVOID msgData, LONG_PTR unhandledReturnCode)
 {
@@ -1159,11 +1150,9 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
         return FALSE;
     }
 
-    // 4. [修复] 官方检入框解析"要检入哪个文件"用的是它自己的逻辑（工作区/配置工作目录），
-    //    不是我们在临时目录覆盖的工作副本，因此它检入的新版本内容往往是服务器旧内容——
-    //    实测表现"版本号有增加但上传的内容不是最新"。检入框建出新版本后，再用直接 API
-    //    （CheckOut->覆盖本地->CheckIn，不建版本、只原地更新内容）把最新版本内容改写为本地文件，
-    //    保证上传的新版本内容就是本地最新。直接 API 检入传内容此前已验证正确。
+    // 4. [修复] 检入框按它自己的工作区解析"要检入哪个文件"，检入的新版本内容往往是旧内容
+    //    （版本号有增但内容不是最新）。检入框建出新版本后，再用直接 API（CheckOut->覆盖->
+    //    CheckIn）把最新版本内容改写为本地文件，保证上传内容就是本地最新。
     LONG lNewDocId = GetLatestDocumentId(lProjectId, lDocumentId);
     if (lNewDocId > 0)
     {
