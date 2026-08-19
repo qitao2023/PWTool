@@ -16,13 +16,13 @@ namespace PWHelper
 
 static CString GetEnvVar(LPCTSTR pszName)
 {
+    // 先取所需缓冲大小（含结尾 '\0'），再用 CString 缓冲读取
     DWORD nLen = GetEnvironmentVariable(pszName, NULL, 0);
     if (nLen == 0)
         return CString();
-    TCHAR* pBuf = new TCHAR[nLen];
-    GetEnvironmentVariable(pszName, pBuf, nLen);
-    CString str(pBuf);
-    delete[] pBuf;
+    CString str;
+    GetEnvironmentVariable(pszName, str.GetBuffer(nLen), nLen);
+    str.ReleaseBuffer();
     return str;
 }
 
@@ -70,7 +70,7 @@ static CString FindPwBinDir()
     {
         CString strDir = arrCands[i];
         strDir.TrimRight(_T('\\'));
-        for (int j = 0; j < 5; j++)
+        for (size_t j = 0; j < _countof(arrSub); j++)
         {
             CString strTest = strDir + arrSub[j] + _T("\\dmawin.dll");
             if (GetFileAttributes(strTest) != INVALID_FILE_ATTRIBUTES)
@@ -168,12 +168,12 @@ BOOL CreateDirRecursive(LPCTSTR pszPath)
     if (dwAttr != INVALID_FILE_ATTRIBUTES && (dwAttr & FILE_ATTRIBUTE_DIRECTORY))
         return TRUE;
 
-    // 逐段创建（跳过盘符）
+    // 逐段创建：在每个 '\' 处及路径末尾截取前缀段（D:\、D:\a、D:\a\b、...），
+    // 缺哪级补哪级；任一级创建失败立即返回，避免后续级联失败掩盖真实原因。
     for (int i = 0; i <= strPath.GetLength(); i++)
     {
-        TCHAR ch = (i < strPath.GetLength()) ? strPath[i] : _T('\\');
-        if (ch != _T('\\'))
-            continue;
+        if (i < strPath.GetLength() && strPath[i] != _T('\\'))
+            continue;   // 只在反斜杠或结尾处截断
 
         CString strSeg = strPath.Left(i);
         if (strSeg.IsEmpty())
@@ -184,10 +184,8 @@ BOOL CreateDirRecursive(LPCTSTR pszPath)
         if (strSeg.GetLength() == 2 && strSeg[1] == _T(':'))
             continue;   // 盘符
 
-        DWORD dwA2 = GetFileAttributes(strSeg);
-        if (dwA2 == INVALID_FILE_ATTRIBUTES)
+        if (GetFileAttributes(strSeg) == INVALID_FILE_ATTRIBUTES)
         {
-            // 任一级创建失败立即返回，避免后续级联失败掩盖真实原因
             if (!CreateDirectoryW(strSeg, NULL) && GetLastError() != ERROR_ALREADY_EXISTS)
                 return FALSE;
         }
@@ -257,6 +255,38 @@ BOOL SavePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, const PWAddrInfo& info)
         strLocal = CString(pszFolder) + _T("\\") + GetFileName(pszLocalFile);
     WritePrivateProfileStringW(strSec, _T("localPath"), strLocal, strIni);
     return TRUE;
+}
+
+// 便捷版：查询数据源名/项目名/版本号/更新时间并写入 INI（各调用方无需重复拼装 PWAddrInfo）。
+// pszLocalPath 非空时作为记录的本地路径，否则默认 folder\文件名。
+void SavePwAddrOfDocument(LPCTSTR pszFolder, LPCTSTR pszLocalFile,
+                          LONG lProjectId, LONG lDocumentId, BOOL bLink,
+                          const CString& strComment, LPCTSTR pszLocalPath)
+{
+    PWAddrInfo info;
+    info.strDatasource = GetDatasourceName();
+    info.lProjectId = lProjectId;
+    info.lDocumentId = lDocumentId;
+    info.bLink = bLink;
+    info.strComment = strComment;
+    if (pszLocalPath != NULL)
+        info.strLocalPath = pszLocalPath;
+
+    if (lProjectId > 0)
+    {
+        if (aaApi_SelectProject(lProjectId) > 0)
+        {
+            const WCHAR* psz = aaApi_GetProjectStringProperty(PROJ_PROP_NAME, 0);
+            if (psz != NULL)
+                info.strProjectName = psz;
+        }
+        if (lDocumentId > 0)
+        {
+            info.strVersion = GetVersion(lProjectId, lDocumentId);
+            info.strVersionDate = GetVersionDate(lProjectId, lDocumentId);
+        }
+    }
+    SavePwAddr(pszFolder, pszLocalFile, info);
 }
 
 BOOL LoadPwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, PWAddrInfo& info)
@@ -421,24 +451,24 @@ CString GetSettingsIniPath()
     return GetSettingsDir() + _T("\\Settings.ini");
 }
 
-CString GetLastLocalPath(BOOL bLinkMode)
+CString GetLastLocalPath(LocalPathMode mode)
 {
     CString strIni = GetSettingsIniPath();
     TCHAR szBuf[MAX_PATH * 2] = { 0 };
     GetPrivateProfileStringW(_T("Recent"),
-                             bLinkMode ? _T("LinkLocalPath") : _T("OpenLocalPath"),
+                             (mode == LOCALPATH_LINK) ? _T("LinkLocalPath") : _T("OpenLocalPath"),
                              _T(""), szBuf, MAX_PATH * 2, strIni);
     return CString(szBuf);
 }
 
-void SetLastLocalPath(LPCTSTR pszPath, BOOL bLinkMode)
+void SetLastLocalPath(LPCTSTR pszPath, LocalPathMode mode)
 {
     if (pszPath == NULL || pszPath[0] == _T('\0'))
         return;
     CString strIni = GetSettingsIniPath();
     CreateDirRecursive(GetSettingsDir());   // 确保配置目录存在（WritePrivateProfileString 不建目录）
     WritePrivateProfileStringW(_T("Recent"),
-                               bLinkMode ? _T("LinkLocalPath") : _T("OpenLocalPath"),
+                               (mode == LOCALPATH_LINK) ? _T("LinkLocalPath") : _T("OpenLocalPath"),
                                pszPath, strIni);
 }
 
@@ -534,21 +564,10 @@ static int MoveDirContents(LPCTSTR pszSrcDir, LPCTSTR pszDstDir)
     return nMoved;
 }
 
-// 调试日志：追加写入 exe 目录\pw_link.log（与链接流程日志同文件），便于排查下载失败。
+// 下载流程诊断日志：写入 exe 目录\pw_link.log（与链接流程同文件），以 [下载] tag 区分
 static void LogPwDebug(LPCTSTR pszLine)
 {
-    CString strDir = GetAppBaseDir();
-    CreateDirRecursive(strDir);
-    CString strPath = strDir + _T("\\pw_link.log");
-
-    FILE* f = NULL;
-    if (_wfopen_s(&f, strPath, L"a, ccs=UTF-8") == 0 && f != NULL)
-    {
-        CTime t = CTime::GetCurrentTime();
-        CString strHead = t.Format(_T("%Y-%m-%d %H:%M:%S"));
-        fwprintf(f, L"[%s] [下载] %s\n", (LPCTSTR)strHead, pszLine);
-        fclose(f);
-    }
+    AppendLog(GetAppBaseDir() + _T("\\pw_link.log"), _T("下载"), pszLine);
 }
 
 // 下载指定 docid 指向的版本到工作目录（不改写为最新版本，调用方自行决定用哪个版本）。
@@ -757,98 +776,6 @@ static void FillVersionUserNames(PWDocVersionItem& item)
         item.strCreatorName = GetUserNameById(item.lCreatorId);
     if (item.lUpdaterId > 0)
         item.strUpdaterName = GetUserNameById(item.lUpdaterId);
-}
-
-LONG EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
-                          CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions)
-{
-    arrVersions.RemoveAll();
-    if (lProjectId <= 0 || lDocumentId <= 0)
-        return 0;
-
-    // 先从任意版本定位到当前(最新)版本：只有活动版本能枚举出完整版本链
-    lDocumentId = GetLatestDocumentId(lProjectId, lDocumentId);
-    if (lDocumentId <= 0)
-        return 0;
-
-    // [修复] 主枚举改用动态数据缓冲区 API aaApi_SelectDocumentDataBufferVersions，
-    // 它明确返回"指定文档的所有版本"。原用静态 aaApi_SelectDocumentVersions 在部分
-    // 数据源上只返回活动版本本身（SDK 注"Only an active document has versions"），
-    // 导致历史版本永远看不到——这是"只能看到一个版本"的根因。
-    HAADMSBUFFER hBuf = aaApi_SelectDocumentDataBufferVersions(lProjectId, lDocumentId);
-    if (hBuf != NULL)
-    {
-        LONG nCount = aaApi_DmsDataBufferGetCount(hBuf);
-        for (LONG i = 0; i < nCount; i++)
-        {
-            PWDocVersionItem item;
-            item.lDocumentId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_ID, i);
-            item.lVersionNo = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_VERSIONNO, i);
-            item.lSize = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_SIZE, i);
-            item.lCreatorId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_CREATORID, i);
-            item.lUpdaterId = aaApi_DmsDataBufferGetNumericProperty(hBuf, DOC_PROP_UPDATERID, i);
-            const WCHAR* psz = aaApi_DmsDataBufferGetStringProperty(hBuf, DOC_PROP_VERSION, i);
-            if (psz) item.strVersion = psz;
-            psz = aaApi_DmsDataBufferGetStringProperty(hBuf, DOC_PROP_FILE_UPDATE_TIME, i);
-            if (psz) item.strUpdateTime = psz;
-            FillVersionUserNames(item);
-            arrVersions.Add(item);
-        }
-        aaApi_DmsDataBufferFree(hBuf);
-    }
-
-    // 动态缓冲区方式失败时，退回静态 SelectDocumentVersions
-    if (arrVersions.GetSize() == 0)
-    {
-        LONG nCount = aaApi_SelectDocumentVersions(lProjectId, lDocumentId);
-        for (LONG i = 0; nCount > 0 && i < nCount; i++)
-        {
-            PWDocVersionItem item;
-            item.lDocumentId = aaApi_GetDocumentNumericProperty(DOC_PROP_ID, i);
-            item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, i);
-            item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, i);
-            item.lCreatorId = aaApi_GetDocumentNumericProperty(DOC_PROP_CREATORID, i);
-            item.lUpdaterId = aaApi_GetDocumentNumericProperty(DOC_PROP_UPDATERID, i);
-            const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, i);
-            if (psz) item.strVersion = psz;
-            psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, i);
-            if (psz) item.strUpdateTime = psz;
-            FillVersionUserNames(item);
-            arrVersions.Add(item);
-        }
-    }
-
-    // 两种方式都枚举不到，但文档必含活动版本：补一行，保证版本界面始终可见
-    if (arrVersions.GetSize() == 0)
-    {
-        PWDocVersionItem item;
-        item.lDocumentId = lDocumentId;
-        if (aaApi_SelectDocument(lProjectId, lDocumentId) == 1)
-        {
-            item.lVersionNo = aaApi_GetDocumentNumericProperty(DOC_PROP_VERSIONNO, 0);
-            item.lSize = aaApi_GetDocumentNumericProperty(DOC_PROP_SIZE, 0);
-            item.lCreatorId = aaApi_GetDocumentNumericProperty(DOC_PROP_CREATORID, 0);
-            item.lUpdaterId = aaApi_GetDocumentNumericProperty(DOC_PROP_UPDATERID, 0);
-            const WCHAR* psz = aaApi_GetDocumentStringProperty(DOC_PROP_VERSION, 0);
-            if (psz) item.strVersion = psz;
-            psz = aaApi_GetDocumentStringProperty(DOC_PROP_FILE_UPDATE_TIME, 0);
-            if (psz) item.strUpdateTime = psz;
-            FillVersionUserNames(item);
-        }
-        arrVersions.Add(item);
-    }
-
-    // 按版本号从大到小排序（最新在前）
-    for (INT_PTR i = 0; i + 1 < arrVersions.GetSize(); i++)
-        for (INT_PTR j = i + 1; j < arrVersions.GetSize(); j++)
-            if (arrVersions[i].lVersionNo < arrVersions[j].lVersionNo)
-            {
-                PWDocVersionItem t = arrVersions[i];
-                arrVersions[i] = arrVersions[j];
-                arrVersions[j] = t;
-            }
-
-    return (LONG)arrVersions.GetSize();
 }
 
 // 按文件名列出项目内所有同名文档（每个同名文档视为一个"版本"），从新到旧排序。
@@ -1145,11 +1072,32 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
         return FALSE;
     }
 
-    // 用临时子目录作为工作副本
+    // 清理上次异常残留的 __pwup_* 临时目录（镜像下载流程的做法，避免累积）
+    if (pszWorkDir != NULL && pszWorkDir[0] != _T('\0'))
+    {
+        WIN32_FIND_DATAW fd;
+        CString strPattern = CString(pszWorkDir) + _T("\\__pwup_*");
+        HANDLE hFind = FindFirstFileW(strPattern, &fd);
+        if (hFind != INVALID_HANDLE_VALUE)
+        {
+            do
+            {
+                if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                    RemoveDirRecursive(CString(pszWorkDir) + _T("\\") + fd.cFileName);
+            } while (FindNextFileW(hFind, &fd));
+            FindClose(hFind);
+        }
+    }
+
+    // 用唯一临时子目录作为工作副本（__pwup_<docid>_<序号>）：固定目录名会残留/冲突，
+    // 镜像下载流程用唯一目录绕开"拷出位置已被占用"的处理方式。
+    static LONG s_nPwUpSeq = 0;
     CString strTempDir(pszWorkDir);
     if (!strTempDir.IsEmpty() && strTempDir[strTempDir.GetLength() - 1] != _T('\\'))
         strTempDir += _T('\\');
-    strTempDir += _T(".pw_upload");
+    CString strTmpName;
+    strTmpName.Format(_T("__pwup_%ld_%ld"), lDocumentId, ++s_nPwUpSeq);
+    strTempDir += strTmpName;
     if (!CreateDirRecursive(strTempDir))
     {
         strErr = _T("创建上传临时目录失败。");
@@ -1243,12 +1191,14 @@ BOOL UploadNewVersion(HWND hWndParent, LONG lProjectId, LONG lDocumentId,
         strVerAfter = GetVersion(lProjectId, lNewDocId);
     if (pOutNewVersion)
         *pOutNewVersion = (!strVerAfter.IsEmpty() && strVerAfter != strVerBefore);
+
+    // 清理临时工作副本目录
+    RemoveDirRecursive(strTempDir);
     return TRUE;
 }
 
-// [真机验证注意] aaApi_CreateDocument 在 SDK samples 中无使用参考，
-// 仅按头文件文档实现；storageId/fileType/appId 传默认值(0)。
-// 首次真机上传新文档时需确认服务器是否接受，如失败请调整参数。
+// [注] aaApi_CreateDocument 在 SDK samples 中无使用参考，仅按头文件文档实现；
+// storageId/fileType/appId 传默认值(0)，已在真机验证"首次上传新建文档"可用。
 BOOL CreateNewDocument(LONG lProjectId, LPCTSTR pszLocalFile, const CString& strComment,
                        LONG& lDocId, CString& strErr)
 {
@@ -1330,6 +1280,27 @@ CString GetFileFolder(LPCTSTR pszPath)
     if (nPos >= 0)
         str = str.Left(nPos);
     return str;
+}
+
+// 追加一行带时间戳的日志（UTF-8）。pszTag 非空时输出 "[时间] [tag] 内容"。
+void AppendLog(LPCTSTR pszLogFile, LPCTSTR pszTag, LPCTSTR pszLine)
+{
+    if (pszLogFile == NULL || pszLine == NULL)
+        return;
+
+    CreateDirRecursive(GetFileFolder(pszLogFile));
+
+    FILE* f = NULL;
+    if (_wfopen_s(&f, pszLogFile, L"a, ccs=UTF-8") == 0 && f != NULL)
+    {
+        CTime t = CTime::GetCurrentTime();
+        CString strHead = t.Format(_T("%Y-%m-%d %H:%M:%S"));
+        if (pszTag != NULL && pszTag[0] != _T('\0'))
+            fwprintf(f, L"[%s] [%s] %s\n", (LPCTSTR)strHead, pszTag, pszLine);
+        else
+            fwprintf(f, L"[%s] %s\n", (LPCTSTR)strHead, pszLine);
+        fclose(f);
+    }
 }
 
 } // namespace PWHelper

@@ -1,0 +1,20 @@
+root = true
+
+# 全项目统一：UTF-8-BOM、4 空格缩进（MFC 工程，避免 tab/空格混用）
+[*]
+charset = utf-8-bom
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+
+# rc 资源文件为 UTF-16LE，由资源编译器维护，缩进保持 4 空格即可
+[*.rc]
+charset = utf-16le
+
+# XML 工程文件惯例
+[*.{vcxproj,vcxproj.filters}]
+indent_style = space
+indent_size = 2
+
+[*.sln]
+indent_style = tab

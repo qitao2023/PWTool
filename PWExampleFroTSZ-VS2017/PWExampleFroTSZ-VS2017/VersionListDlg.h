@@ -7,26 +7,26 @@
 class CDlgVersionList : public CDialogEx
 {
 public:
-	explicit CDlgVersionList(LONG lProjectId, LONG lDocumentId,
-		LPCTSTR pszCurVersionDate, CWnd* pParent = nullptr);
-	virtual ~CDlgVersionList();
+    explicit CDlgVersionList(LONG lProjectId, LONG lDocumentId,
+        LPCTSTR pszCurVersionDate, CWnd* pParent = nullptr);
+    virtual ~CDlgVersionList();
 
-	PWHelper::PWDocVersionItem m_sel;   // 用户选中的版本
+    PWHelper::PWDocVersionItem m_sel;   // 用户选中的版本
 
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_VERSIONLIST_DLG };
+    enum { IDD = IDD_VERSIONLIST_DLG };
 #endif
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);
-	virtual BOOL OnInitDialog();
-	virtual void OnOK();
+    virtual void DoDataExchange(CDataExchange* pDX);
+    virtual BOOL OnInitDialog();
+    virtual void OnOK();
 
-	CListCtrl m_list;
-	CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> m_arrVersions;
-	LONG m_lProjectId;
-	LONG m_lDocumentId;
-	CString m_strCurVersionDate;    // 本地当前版本的更新时间（INI versionDate），用于标记
+    CListCtrl m_list;
+    CArray<PWHelper::PWDocVersionItem, PWHelper::PWDocVersionItem&> m_arrVersions;
+    LONG m_lProjectId;
+    LONG m_lDocumentId;
+    CString m_strCurVersionDate;    // 本地当前版本的更新时间（INI versionDate），用于标记
 
-	DECLARE_MESSAGE_MAP()
+    DECLARE_MESSAGE_MAP()
 };

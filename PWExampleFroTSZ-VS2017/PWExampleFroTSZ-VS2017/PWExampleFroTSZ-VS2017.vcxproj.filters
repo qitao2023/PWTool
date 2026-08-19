@@ -42,9 +42,6 @@
     <ClInclude Include="LinkMgrDlg.h">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="UploadDlg.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="VersionListDlg.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -66,9 +63,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="LinkMgrDlg.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="UploadDlg.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="VersionListDlg.cpp">

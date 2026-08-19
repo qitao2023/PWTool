@@ -11,7 +11,6 @@
 // 新增对话框 ID
 #define IDD_DOCLIST_DLG                 130
 #define IDD_LINKMGR_DLG                 131
-#define IDD_UPLOAD_DLG                  132
 #define IDD_VERSIONLIST_DLG             133
 
 // 主对话框新增控件
@@ -33,23 +32,10 @@
 
 // LinkMgrDlg 控件
 #define IDC_LIST_LINKMODELS             1300
-#define IDC_BTN_ADD                     1301
-#define IDC_BTN_DEL                     1302
 #define IDC_BTN_LINK                    1303
 #define IDC_BTN_UNLINK                  1304
 #define IDC_BTN_UPDATE                  1305
 #define IDC_STATIC_STATUS               1306
-
-// UploadDlg 控件
-#define IDC_STATIC_MODEL                1400
-#define IDC_EDIT_MODELPATH2             1401
-#define IDC_STATIC_PWADDR               1402
-#define IDC_EDIT_PWADDR                 1403
-#define IDC_STATIC_COMMENT              1404
-#define IDC_EDIT_VERSIONCOMMENT         1405
-#define IDC_STATIC_TARGETDIR            1406
-#define IDC_EDIT_TARGETDIR              1407
-#define IDC_BTN_BROWSE_TARGET           1408
 
 // VersionListDlg 控件
 #define IDC_LIST_VERSIONS               1500

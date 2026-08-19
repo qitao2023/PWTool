@@ -5,10 +5,10 @@
 #pragma once
 
 #ifndef __AFXWIN_H__
-	#error "include 'pch.h' before including this file for PCH"
+    #error "include 'pch.h' before including this file for PCH"
 #endif
 
-#include "resource.h"		// 主符号
+#include "resource.h"  // 主符号
 
 
 // CPWExampleFroTSZVS2017App:
@@ -18,15 +18,15 @@
 class CPWExampleFroTSZVS2017App : public CWinApp
 {
 public:
-	CPWExampleFroTSZVS2017App();
+    CPWExampleFroTSZVS2017App();
 
 // 重写
 public:
-	virtual BOOL InitInstance();
+    virtual BOOL InitInstance();
 
 // 实现
 
-	DECLARE_MESSAGE_MAP()
+    DECLARE_MESSAGE_MAP()
 };
 
 extern CPWExampleFroTSZVS2017App theApp;

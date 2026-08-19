@@ -87,6 +87,12 @@ namespace PWHelper
     // ---- INI（PW 地址来源）----
     CString GetAddrIniPath(LPCTSTR pszFolder);            // 返回 folder\PWAddress.ini
     BOOL    SavePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, const PWAddrInfo& info); // 记录 localPath=文件夹+文件名
+    // 便捷版：查询数据源名/项目名/版本号/更新时间并写入 INI，省去调用方重复拼装 PWAddrInfo。
+    // pszLocalPath 非空时作为记录的本地路径，否则默认 folder\文件名。
+    void    SavePwAddrOfDocument(LPCTSTR pszFolder, LPCTSTR pszLocalFile,
+                                 LONG lProjectId, LONG lDocumentId, BOOL bLink,
+                                 const CString& strComment = _T(""),
+                                 LPCTSTR pszLocalPath = NULL);
     BOOL    LoadPwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile, PWAddrInfo& info);
     BOOL    SetPwAddrLinkState(LPCTSTR pszFolder, LPCTSTR pszLocalFile, BOOL bLink);
     BOOL    DeletePwAddr(LPCTSTR pszFolder, LPCTSTR pszLocalFile);
@@ -100,18 +106,16 @@ namespace PWHelper
     // ---- 最近使用参数（%APPDATA%\PWTool\Settings.ini）----
     // 记录用户上次修改过的参数（如本地下载目录），下次打开自动带出，无需重复填写。
     // 配置存用户目录而非 exe 目录：exe 可能部署在 Program Files 下不可写。
+    enum LocalPathMode { LOCALPATH_OPEN, LOCALPATH_LINK };     // 本地下载目录类型（打开/链接分开记忆）
     CString GetSettingsIniPath();                              // %APPDATA%\PWTool\Settings.ini
-    CString GetLastLocalPath(BOOL bLinkMode);                  // 上次使用的本地下载目录（0=打开 1=链接）；无记录返回空
-    void    SetLastLocalPath(LPCTSTR pszPath, BOOL bLinkMode); // 记录上次使用的本地下载目录
+    CString GetLastLocalPath(LocalPathMode mode);              // 上次使用的本地下载目录；无记录返回空
+    void    SetLastLocalPath(LPCTSTR pszPath, LocalPathMode mode); // 记录上次使用的本地下载目录
 
     // ---- PW 操作 ----
     // 由文档的任一版本 docid 解析出该文档当前(最新)版本的 docid。
     // [修复] ProjectWise 每个版本是独立的 docid，服务器上检入新版本后旧 docid 仍指向旧版本；
     // 通过 DOC_PROP_ORIGINALNO 关联：当前版本该值=0，历史版本该值=当前版本的 docid。
     LONG    GetLatestDocumentId(LONG lProjectId, LONG lDocumentId);
-    // 枚举文档的所有版本（按版本号从新到旧排序），返回版本数量；失败返回<=0。
-    LONG    EnumDocumentVersions(LONG lProjectId, LONG lDocumentId,
-                                 CArray<PWDocVersionItem, PWDocVersionItem&>& arrVersions);
     // 比较版本串（A<B<...<Z<AA）：返回 a>b ? 1 : (a<b ? -1 : 0)
     int     CompareVersionStrings(LPCTSTR a, LPCTSTR b);
     // 按文件名列出项目内所有同名文档（每个同名文档视为一个"版本"）。
@@ -162,6 +166,11 @@ namespace PWHelper
                              BOOL* pOutNewVersion = NULL);
     BOOL    CreateNewDocument(LONG lProjectId, LPCTSTR pszLocalFile, const CString& strComment,
                               LONG& lDocId, CString& strErr);             // aaApi_CreateDocument
+
+    // ---- 日志 ----
+    // 追加一行带时间戳的日志（UTF-8）。pszTag 非空时输出 "[时间] [tag] 内容"。
+    // 各功能模块（下载/链接/更新）以不同日志文件 + tag 区分。
+    void    AppendLog(LPCTSTR pszLogFile, LPCTSTR pszTag, LPCTSTR pszLine);
 
     // ---- 通用 ----
     CString GetLastErrorText();                           // 包装 aaApi_GetLastErrorMessage()

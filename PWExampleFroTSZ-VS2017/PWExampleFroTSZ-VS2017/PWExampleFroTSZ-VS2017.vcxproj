@@ -212,7 +212,6 @@
     <ClInclude Include="PWHelper.h" />
     <ClInclude Include="DocListDlg.h" />
     <ClInclude Include="LinkMgrDlg.h" />
-    <ClInclude Include="UploadDlg.h" />
     <ClInclude Include="VersionListDlg.h" />
   </ItemGroup>
   <ItemGroup>
@@ -227,7 +226,6 @@
     <ClCompile Include="PWHelper.cpp" />
     <ClCompile Include="DocListDlg.cpp" />
     <ClCompile Include="LinkMgrDlg.cpp" />
-    <ClCompile Include="UploadDlg.cpp" />
     <ClCompile Include="VersionListDlg.cpp" />
   </ItemGroup>
   <ItemGroup>

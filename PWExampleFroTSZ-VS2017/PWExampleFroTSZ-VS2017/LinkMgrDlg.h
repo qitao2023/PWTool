@@ -7,48 +7,46 @@
 class CDlgLinkMgr : public CDialogEx
 {
 public:
-	explicit CDlgLinkMgr(CWnd* pParent = nullptr);
-	virtual ~CDlgLinkMgr();
+    explicit CDlgLinkMgr(CWnd* pParent = nullptr);
+    virtual ~CDlgLinkMgr();
 
 #ifdef AFX_DESIGN_TIME
-	enum { IDD = IDD_LINKMGR_DLG };
+    enum { IDD = IDD_LINKMGR_DLG };
 #endif
 
 protected:
-	virtual void DoDataExchange(CDataExchange* pDX);
-	virtual BOOL OnInitDialog();
+    virtual void DoDataExchange(CDataExchange* pDX);
+    virtual BOOL OnInitDialog();
 
-	afx_msg void OnBnClickedAdd();
-	afx_msg void OnBnClickedDel();
-	afx_msg void OnBnClickedLink();
-	afx_msg void OnBnClickedUnlink();
-	afx_msg void OnBnClickedUpdate();
-	afx_msg void OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult);   // 点击"历史版本"列
+    afx_msg void OnBnClickedLink();
+    afx_msg void OnBnClickedUnlink();
+    afx_msg void OnBnClickedUpdate();
+    afx_msg void OnNMClickList(NMHDR* pNMHDR, LRESULT* pResult);   // 点击"历史版本"列
 
-	DECLARE_MESSAGE_MAP()
+    DECLARE_MESSAGE_MAP()
 
 private:
-	// 列表行数据
-	struct LinkItem
-	{
-		CString strLocalPath;               // 本地完整路径
-		CString strFileName;                // 文件名
-		PWHelper::PWAddrInfo addr;          // PW 地址
-		BOOL    bHasAddr;                   // 是否有 PW 地址
-		BOOL    bLink;                      // 链接状态
-		LONG    lChosenDocId;               // 用户经"历史版本"列选定的版本docid；0=未选(默认用最新)
-		CString strChosenVer;               // 选定版本号
-		CString strChosenDate;              // 选定版本时间
+    // 列表行数据
+    struct LinkItem
+    {
+        CString strLocalPath;               // 本地完整路径
+        CString strFileName;                // 文件名
+        PWHelper::PWAddrInfo addr;          // PW 地址
+        BOOL    bHasAddr;                   // 是否有 PW 地址
+        BOOL    bLink;                      // 链接状态
+        LONG    lChosenDocId;               // 用户经"历史版本"列选定的版本docid；0=未选(默认用最新)
+        CString strChosenVer;               // 选定版本号
+        CString strChosenDate;              // 选定版本时间
 
-		LinkItem() : bHasAddr(FALSE), bLink(FALSE), lChosenDocId(0) {}
-	};
+        LinkItem() : bHasAddr(FALSE), bLink(FALSE), lChosenDocId(0) {}
+    };
 
-	void ReloadList();                      // 扫描各链接目录 + INI 合并构建列表
-	void DetectLatestVersions();            // 逐项查询 PW 最新版本日期
-	int  GetSelectedRow() const;
-	int  FindItem(LPCTSTR pszFileName) const;   // 按文件名找已存在的行号，找不到返回 -1
-	void SetStatusText(LPCTSTR psz);
+    void ReloadList();                      // 扫描各链接目录 + INI 合并构建列表
+    void DetectLatestVersions();            // 逐项查询 PW 最新版本日期
+    int  GetSelectedRow() const;
+    int  FindItem(LPCTSTR pszFileName) const;   // 按文件名找已存在的行号，找不到返回 -1
+    void SetStatusText(LPCTSTR psz);
 
-	CListCtrl m_list;
-	CArray<LinkItem, LinkItem&> m_arrItems;
+    CListCtrl m_list;
+    CArray<LinkItem, LinkItem&> m_arrItems;
 };
