@@ -22,7 +22,7 @@
     <VCProjectVersion>15.0</VCProjectVersion>
     <ProjectGuid>{DDF8894F-FCB4-4AE4-BF8A-A5FD7E9F3DFF}</ProjectGuid>
     <Keyword>MFCProj</Keyword>
-    <RootNamespace>PWExampleFroTSZVS2017</RootNamespace>
+    <RootNamespace>PWTool</RootNamespace>
     <WindowsTargetPlatformVersion>10.0.17763.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -205,8 +205,8 @@
   <ItemGroup>
     <ClInclude Include="framework.h" />
     <ClInclude Include="pch.h" />
-    <ClInclude Include="PWExampleFroTSZ-VS2017.h" />
-    <ClInclude Include="PWExampleFroTSZ-VS2017Dlg.h" />
+    <ClInclude Include="PWTool.h" />
+    <ClInclude Include="PWToolDlg.h" />
     <ClInclude Include="Resource.h" />
     <ClInclude Include="targetver.h" />
     <ClInclude Include="PWHelper.h" />
@@ -221,21 +221,21 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="PWExampleFroTSZ-VS2017.cpp" />
-    <ClCompile Include="PWExampleFroTSZ-VS2017Dlg.cpp" />
+    <ClCompile Include="PWTool.cpp" />
+    <ClCompile Include="PWToolDlg.cpp" />
     <ClCompile Include="PWHelper.cpp" />
     <ClCompile Include="DocListDlg.cpp" />
     <ClCompile Include="LinkMgrDlg.cpp" />
     <ClCompile Include="VersionListDlg.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="PWExampleFroTSZVS2017.rc" />
+    <ResourceCompile Include="PWTool.rc" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="res\PWExampleFroTSZVS2017.rc2" />
+    <None Include="res\PWTool.rc2" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\PWExampleFroTSZ-VS2017.ico" />
+    <Image Include="res\PWTool.ico" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

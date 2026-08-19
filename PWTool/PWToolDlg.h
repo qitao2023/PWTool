@@ -1,16 +1,16 @@
 ﻿#pragma once
 
 
-// CPWExampleFroTSZVS2017Dlg 对话框
-class CPWExampleFroTSZVS2017Dlg : public CDialogEx
+// CPWToolDlg 对话框
+class CPWToolDlg : public CDialogEx
 {
 // 构造
 public:
-    CPWExampleFroTSZVS2017Dlg(CWnd* pParent = nullptr); // 标准构造函数
+    CPWToolDlg(CWnd* pParent = nullptr); // 标准构造函数
 
 // 对话框数据
 #ifdef AFX_DESIGN_TIME
-    enum { IDD = IDD_PWEXAMPLEFROTSZVS2017_DIALOG };
+    enum { IDD = IDD_PWTOOL_DIALOG };
 #endif
 
     protected:

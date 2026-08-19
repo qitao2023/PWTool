@@ -2,7 +2,7 @@
 
 #include "pch.h"
 #include "framework.h"
-#include "PWExampleFroTSZ-VS2017.h"
+#include "PWTool.h"
 #include "LinkMgrDlg.h"
 #include "VersionListDlg.h"
 #include "PWHelper.h"

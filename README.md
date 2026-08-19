@@ -14,16 +14,21 @@
 ## 工程结构
 
 ```
-PWExampleFroTSZ-VS2017/
-├── PWExampleFroTSZ-VS2017.sln          # 解决方案
-└── PWExampleFroTSZ-VS2017/
-    ├── PWHelper.cpp/h                  # PW 协同公共封装（登录/下载/上传/版本/INI/日志）
-    ├── PWExampleFroTSZ-VS2017Dlg.cpp/h # 主对话框：登录/打开/链接/链接管理/上传入口
-    ├── DocListDlg.cpp/h                # 文档列表对话框（打开/链接共用）
-    ├── LinkMgrDlg.cpp/h                # 链接管理对话框
-    ├── VersionListDlg.cpp/h            # 版本选择对话框
-    ├── pch.h                           # 预编译头（含 PW SDK 头文件）
-    └── res/                            # 图标等资源
+PWTool/                    # 仓库根
+├── PWTool.sln             # 解决方案
+├── PWTool/                # 工程源码
+│   ├── PWTool.vcxproj     # 工程文件
+│   ├── PWTool.cpp/h       # 应用入口（CWinApp）
+│   ├── PWToolDlg.cpp/h    # 主对话框：登录/打开/链接/链接管理/上传入口
+│   ├── PWHelper.cpp/h     # PW 协同公共封装（登录/下载/上传/版本/INI/日志）
+│   ├── DocListDlg.cpp/h   # 文档列表对话框（打开/链接共用）
+│   ├── LinkMgrDlg.cpp/h   # 链接管理对话框
+│   ├── VersionListDlg.cpp/h # 版本选择对话框
+│   ├── PWTool.rc          # 资源脚本
+│   ├── resource.h / pch.h
+│   └── res/               # 图标等资源
+├── dist/                  # 打包输出（x86/x64 重命名 exe + 说明）
+└── 参考资料/              # 本地归档（SDK 参考，不入库）
 ```
 
 ## 编译环境
@@ -39,11 +44,11 @@ PWExampleFroTSZ-VS2017/
 
 ```bat
 # Release x64 / x86（dist 同时发布两个平台）
-MSBuild PWExampleFroTSZ-VS2017.sln /p:Configuration=Release /p:Platform=x64
-MSBuild PWExampleFroTSZ-VS2017.sln /p:Configuration=Release /p:Platform=x86
+MSBuild PWTool.sln /p:Configuration=Release /p:Platform=x64
+MSBuild PWTool.sln /p:Configuration=Release /p:Platform=x86
 ```
 
-- 产物：`x64\Release\PWExampleFroTSZ-VS2017.exe`、`Release\PWExampleFroTSZ-VS2017.exe`
+- 产物：`x64\Release\PWTool.exe`、`Release\PWTool.exe`
 - 打包输出到 `dist\`：两个重命名 exe（`-x64` / `-x86`）+ `check_pw_runtime.bat` + `使用说明.txt`
 - 程序在**装有 PW 客户端的机器**上运行（开发机无需装 PW 客户端）
 

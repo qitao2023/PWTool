@@ -17,8 +17,8 @@ echo.
 echo ============================================
 echo  HOW TO READ THE RESULT:
 echo  - If a path is listed above: PW client IS installed.
-echo      If path contains "x86" -> 32-bit PW -> use:  Release\PWExampleFroTSZ-VS2017.exe
-echo      If path has NO  "x86"  -> 64-bit PW -> use:  x64\Release\PWExampleFroTSZ-VS2017.exe
+echo      If path contains "x86" -> 32-bit PW -> use:  Release\PWTool.exe
+echo      If path has NO  "x86"  -> 64-bit PW -> use:  x64\Release\PWTool.exe
 echo  - If nothing is listed: PW client is NOT installed on this PC.
 echo.
 echo  TIP: put the exe into the same folder as dmawin.dll and run it.

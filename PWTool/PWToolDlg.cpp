@@ -1,11 +1,11 @@
 ﻿
-// PWExampleFroTSZ-VS2017Dlg.cpp: 实现文件
+// PWToolDlg.cpp: 实现文件
 //
 
 #include "pch.h"
 #include "framework.h"
-#include "PWExampleFroTSZ-VS2017.h"
-#include "PWExampleFroTSZ-VS2017Dlg.h"
+#include "PWTool.h"
+#include "PWToolDlg.h"
 #include "afxdialogex.h"
 #include "PWHelper.h"
 #include "DocListDlg.h"
@@ -57,37 +57,37 @@ BEGIN_MESSAGE_MAP(CAboutDlg, CDialogEx)
 END_MESSAGE_MAP()
 
 
-// CPWExampleFroTSZVS2017Dlg 对话框
+// CPWToolDlg 对话框
 
 
 
-CPWExampleFroTSZVS2017Dlg::CPWExampleFroTSZVS2017Dlg(CWnd* pParent /*=nullptr*/)
-    : CDialogEx(IDD_PWEXAMPLEFROTSZVS2017_DIALOG, pParent)
+CPWToolDlg::CPWToolDlg(CWnd* pParent /*=nullptr*/)
+    : CDialogEx(IDD_PWTOOL_DIALOG, pParent)
 {
     m_hIcon = AfxGetApp()->LoadIcon(IDR_MAINFRAME);
 }
 
-void CPWExampleFroTSZVS2017Dlg::DoDataExchange(CDataExchange* pDX)
+void CPWToolDlg::DoDataExchange(CDataExchange* pDX)
 {
     CDialogEx::DoDataExchange(pDX);
 }
 
-BEGIN_MESSAGE_MAP(CPWExampleFroTSZVS2017Dlg, CDialogEx)
+BEGIN_MESSAGE_MAP(CPWToolDlg, CDialogEx)
     ON_WM_SYSCOMMAND()
     ON_WM_PAINT()
     ON_WM_QUERYDRAGICON()
-    ON_BN_CLICKED(IDC_BTN_PW_LOGIN, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogin)
-    ON_BN_CLICKED(IDC_BTN_PW_LOGOUT, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogout)
-    ON_BN_CLICKED(IDC_BTN_PW_OPEN, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen)
-    ON_BN_CLICKED(IDC_BTN_PW_LINK, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink)
-    ON_BN_CLICKED(IDC_BTN_PW_LINKMGR, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLinkMgr)
-    ON_BN_CLICKED(IDC_BTN_PW_UPLOAD, &CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload)
+    ON_BN_CLICKED(IDC_BTN_PW_LOGIN, &CPWToolDlg::OnBnClickedPwLogin)
+    ON_BN_CLICKED(IDC_BTN_PW_LOGOUT, &CPWToolDlg::OnBnClickedPwLogout)
+    ON_BN_CLICKED(IDC_BTN_PW_OPEN, &CPWToolDlg::OnBnClickedPwOpen)
+    ON_BN_CLICKED(IDC_BTN_PW_LINK, &CPWToolDlg::OnBnClickedPwLink)
+    ON_BN_CLICKED(IDC_BTN_PW_LINKMGR, &CPWToolDlg::OnBnClickedPwLinkMgr)
+    ON_BN_CLICKED(IDC_BTN_PW_UPLOAD, &CPWToolDlg::OnBnClickedPwUpload)
 END_MESSAGE_MAP()
 
 
-// CPWExampleFroTSZVS2017Dlg 消息处理程序
+// CPWToolDlg 消息处理程序
 
-BOOL CPWExampleFroTSZVS2017Dlg::OnInitDialog()
+BOOL CPWToolDlg::OnInitDialog()
 {
     CDialogEx::OnInitDialog();
 
@@ -116,7 +116,7 @@ BOOL CPWExampleFroTSZVS2017Dlg::OnInitDialog()
     return TRUE;  // 除非将焦点设置到控件，否则返回 TRUE
 }
 
-void CPWExampleFroTSZVS2017Dlg::OnSysCommand(UINT nID, LPARAM lParam)
+void CPWToolDlg::OnSysCommand(UINT nID, LPARAM lParam)
 {
     if ((nID & 0xFFF0) == IDM_ABOUTBOX)
     {
@@ -129,7 +129,7 @@ void CPWExampleFroTSZVS2017Dlg::OnSysCommand(UINT nID, LPARAM lParam)
     }
 }
 
-void CPWExampleFroTSZVS2017Dlg::OnPaint()
+void CPWToolDlg::OnPaint()
 {
     if (IsIconic())
     {
@@ -154,14 +154,14 @@ void CPWExampleFroTSZVS2017Dlg::OnPaint()
 }
 
 // 窗口最小化时，系统拖动图标调用此函数取得光标
-HCURSOR CPWExampleFroTSZVS2017Dlg::OnQueryDragIcon()
+HCURSOR CPWToolDlg::OnQueryDragIcon()
 {
     return static_cast<HCURSOR>(m_hIcon);
 }
 
 
 
-void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogin()
+void CPWToolDlg::OnBnClickedPwLogin()
 {
     if (PWHelper::EnsureLogin(this))
     {
@@ -172,7 +172,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogin()
 
 
 // 退出登录：断开当前账号，便于切换其他账号
-void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogout()
+void CPWToolDlg::OnBnClickedPwLogout()
 {
     if (AfxMessageBox(_T("确定退出当前PW账号？"), MB_YESNO | MB_ICONQUESTION) != IDYES)
         return;
@@ -188,7 +188,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLogout()
 
 
 // 登录状态同步到窗口标题：已登录时标题显示当前账号，退出登录时恢复默认标题
-void CPWExampleFroTSZVS2017Dlg::UpdateLoginTitle()
+void CPWToolDlg::UpdateLoginTitle()
 {
     // 首次调用时记录窗口默认标题（来自资源对话框标题），之后作为标题前缀
     if (m_strBaseTitle.IsEmpty())
@@ -209,7 +209,7 @@ void CPWExampleFroTSZVS2017Dlg::UpdateLoginTitle()
 
 
 // 打开PW：下载到本地 model 目录并打开模型文件
-void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen()
+void CPWToolDlg::OnBnClickedPwOpen()
 {
     if (!PWHelper::EnsureLogin(this))
         return;
@@ -284,7 +284,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwOpen()
 
 
 // 链接：多选下载到本地 LinkModel 目录并保存PW地址来源
-void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
+void CPWToolDlg::OnBnClickedPwLink()
 {
     if (!PWHelper::EnsureLogin(this))
         return;
@@ -370,7 +370,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLink()
 
 
 // 链接管理
-void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLinkMgr()
+void CPWToolDlg::OnBnClickedPwLinkMgr()
 {
     CDlgLinkMgr dlg(this);
     dlg.DoModal();
@@ -379,7 +379,7 @@ void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwLinkMgr()
 
 // 上传：有PW地址来源→直接检出并弹PW检入框生成新版本；无地址→选目标目录创建新文档。
 // [简化] 不再弹工具自己的上传框，版本说明在PW检入框里填。
-void CPWExampleFroTSZVS2017Dlg::OnBnClickedPwUpload()
+void CPWToolDlg::OnBnClickedPwUpload()
 {
     CString strModel = m_strCurrentModelPath;
 

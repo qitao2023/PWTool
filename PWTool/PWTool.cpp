@@ -1,11 +1,11 @@
 ﻿
-// PWExampleFroTSZ-VS2017.cpp: 定义应用程序的类行为。
+// PWTool.cpp: 定义应用程序的类行为。
 //
 
 #include "pch.h"
 #include "framework.h"
-#include "PWExampleFroTSZ-VS2017.h"
-#include "PWExampleFroTSZ-VS2017Dlg.h"
+#include "PWTool.h"
+#include "PWToolDlg.h"
 #include "PWHelper.h"
 
 #ifdef _DEBUG
@@ -13,30 +13,30 @@
 #endif
 
 
-// CPWExampleFroTSZVS2017App
+// CPWToolApp
 
-BEGIN_MESSAGE_MAP(CPWExampleFroTSZVS2017App, CWinApp)
+BEGIN_MESSAGE_MAP(CPWToolApp, CWinApp)
     ON_COMMAND(ID_HELP, &CWinApp::OnHelp)
 END_MESSAGE_MAP()
 
 
-// CPWExampleFroTSZVS2017App 构造
+// CPWToolApp 构造
 
-CPWExampleFroTSZVS2017App::CPWExampleFroTSZVS2017App()
+CPWToolApp::CPWToolApp()
 {
     // 支持重新启动管理器
     m_dwRestartManagerSupportFlags = AFX_RESTART_MANAGER_SUPPORT_RESTART;
 }
 
 
-// 唯一的 CPWExampleFroTSZVS2017App 对象
+// 唯一的 CPWToolApp 对象
 
-CPWExampleFroTSZVS2017App theApp;
+CPWToolApp theApp;
 
 
-// CPWExampleFroTSZVS2017App 初始化
+// CPWToolApp 初始化
 
-BOOL CPWExampleFroTSZVS2017App::InitInstance()
+BOOL CPWToolApp::InitInstance()
 {
     // 如果一个运行在 Windows XP 上的应用程序清单指定要
     // 使用 ComCtl32.dll 版本 6 或更高版本来启用可视化方式，
@@ -75,7 +75,7 @@ BOOL CPWExampleFroTSZVS2017App::InitInstance()
     // 应用设置注册表项（用于 MFC 框架状态存储）
     SetRegistryKey(_T("PWTool"));
 
-    CPWExampleFroTSZVS2017Dlg dlg;
+    CPWToolDlg dlg;
     m_pMainWnd = &dlg;
     INT_PTR nResponse = dlg.DoModal();
     if (nResponse == -1)
