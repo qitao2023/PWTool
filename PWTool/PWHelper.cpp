@@ -816,7 +816,9 @@ LONG EnumSameNameDocuments(LONG lProjectId, LONG lDocumentId,
     if (strName.IsEmpty())
         return 0;
 
-    // 扫描项目内所有文档行（含各版本），按文件名匹配
+    // 扫描项目内所有文档行（含各版本），按文件名匹配。
+    // [数据源限制] aaApi_SelectDocumentDataBufferVersions（版本集枚举 API）在 CISDI-PW
+    // 只返回活动版本；改用 aaApi_SelectDocumentsByProjectId 能返回全部同名文档行。
     LONG nAll = aaApi_SelectDocumentsByProjectId(lProjectId);
     for (LONG i = 0; i < nAll; i++)
     {

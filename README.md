@@ -15,6 +15,8 @@
 
 ```
 PWTool/                    # 仓库根
+├── docs/                  # 开发文档
+│   └── PW_API_Reference.md  # PW API 速查参考（本项目用到的所有 aaApi_* 函数说明）
 ├── PWTool.sln             # 解决方案
 ├── PWTool/                # 工程源码
 │   ├── PWTool.vcxproj     # 工程文件
@@ -35,7 +37,17 @@ PWTool/                    # 仓库根
 
 - Visual Studio 2017（或 VS2022 安装 v141 工具集），MFC
 - Windows SDK 10.0.17763.0
-- ProjectWise SDK：`D:\SDK\ProjectWise100003262en`（include / lib 路径已在 vcxproj 中配置）
+- ProjectWise SDK（include / lib 路径已在 vcxproj 中配置）：
+
+  ```
+  D:\SDK\ProjectWise100003262en\
+  ├── include\          ← 头文件（dmsapi.h 等）
+  ├── lib\
+  │   ├── Win32\        ← 32 位链接库
+  │   └── x64\          ← 64 位链接库
+  └── samples\          ← 官方示例代码
+  ```
+
 - PW 相关 DLL（`dmawin.dll` 等）为延迟加载，运行前程序会自动定位 PW 客户端 bin 目录并加入搜索路径
 
 详细编译运行说明见 `参考资料/20260728/PWExampleFroTSZ-VS2017-编译运行说明.docx`（该目录仅本地保留，不入库）。
@@ -76,3 +88,9 @@ MSBuild PWTool.sln /p:Configuration=Release /p:Platform=x86
 
 - **单线程 UI**：所有 PW 操作（下载重试等待、上传）均为同步调用，操作期间界面会阻塞
 - 打开/链接下载时若本地同名文件被 CAD 占用，会提示先关闭文件后重试
+
+## 开发参考
+
+- **PW API 速查**：[docs/PW_API_Reference.md](docs/PW_API_Reference.md) — 本项目用到的所有 `aaApi_*` 函数，按功能分类，含参数说明和版本机制备注
+- **PW SDK 头文件**：`D:\SDK\ProjectWise100003262en\include\dmsapi.h`（完整 API 声明）
+- **PW SDK 示例**：`D:\SDK\ProjectWise100003262en\samples\`（官方示例代码）
